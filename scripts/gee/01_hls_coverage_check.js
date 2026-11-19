@@ -1,9 +1,9 @@
-/* =============================================================================
+/* 
  *  KIDEPO LANDSCAPE — LAND COVER / LAND USE CHANGE (LCLUC)
  *  GEE Script 01 — HLS coverage check
- * -----------------------------------------------------------------------------
+ * 
  *  PURPOSE
- *  -------
+ *  
  *  Decide the TWO comparison dates with evidence instead of guesswork. For every
  *  candidate year this script counts, inside the PA union:
  *
@@ -32,27 +32,27 @@
  *
  *  Save as: users/imnduta1/Ismurn/01_hls_coverage_check
  *  Author: Isaac Mureithi
- * ============================================================================= */
+ *  */
 
 
-/* =============================================================================
+/* 
  *  PHASE 0 — CONFIGURATION
- * ============================================================================= */
+ *  */
 
-// ---- 0.1 Assets -----------------------------------------------------------
-var ASSET_ROOT = 'users/imnduta1/Ismurn/';
+//  0.1 Assets 
+var ASSET_ROOT = 'users/imnduta1/KidepoAOI-LULC-ML/';
 var aoi_union  = ee.FeatureCollection(ASSET_ROOT + 'kidepo_pa_union');
 var aoi_parts  = ee.FeatureCollection(ASSET_ROOT + 'kidepo_pa_parts');
 
 var aoi = aoi_union.geometry();
 
-// ---- 0.2 Candidate years --------------------------------------------------
+//  0.2 Candidate years 
 // 2016 is the first year both HLS sensors contribute. The current year is excluded
 // because its dry season may be incomplete at run time.
 var YEAR_START = 2016;
 var YEAR_END   = 2025;
 
-// ---- 0.3 Seasonal windows -------------------------------------------------
+//  0.3 Seasonal windows 
 // Karamoja is unimodal: a long rains roughly Apr-Oct, a sharp dry season Dec-Mar.
 // Two windows are evaluated because they trade cloud against fire:
 //
@@ -71,13 +71,13 @@ var WINDOWS = {
 var WINDOW_NAME = 'dry_late';          // <<< switch to 'dry_early' and re-run to compare
 var WINDOW      = WINDOWS[WINDOW_NAME];
 
-// ---- 0.4 Quality thresholds ----------------------------------------------
+//  0.4 Quality thresholds 
 var MAX_SCENE_CLOUD = 60;   // %; drop whole scenes cloudier than this before masking
 var MIN_CLEAR_OBS   = 4;    // clear observations per pixel for a usable median
 var SCALE_STATS     = 90;   // m; stats resolution. 3x the 30 m pixel keeps the
                             // interactive reductions fast. Only the EXPORT needs 30 m.
 
-// ---- 0.5 Bands -----------------------------------------------------------
+//  0.5 Bands 
 // HLSL30 (Landsat) and HLSS30 (Sentinel-2) use DIFFERENT band names for the same
 // wavelengths. Renaming to a common scheme is what makes the two stackable — this
 // mapping is the single most error-prone part of using HLS, so it is explicit.
@@ -90,9 +90,9 @@ var BANDS_L30    = ['B2', 'B3', 'B4', 'B5',  'B6',  'B7'];
 var BANDS_S30    = ['B2', 'B3', 'B4', 'B8A', 'B11', 'B12'];
 
 
-/* =============================================================================
+/* 
  *  PHASE 1 — HELPERS
- * ============================================================================= */
+ *  */
 
 /**
  * 1.1 Build the seasonal window for one year.
@@ -173,9 +173,9 @@ function clearObsFor(start, end) {
 }
 
 
-/* =============================================================================
+/* 
  *  PHASE 2 — PER-YEAR COVERAGE STATISTICS
- * ============================================================================= */
+ *  */
 
 // 2.1 Sub-areas to report on separately. The transboundary pieces are the ones
 // likely to be under-sampled (CLAUDE.md caveat #4), so they get their own rows.
@@ -253,9 +253,9 @@ print('Coverage by year — window "' + WINDOW_NAME + '" (' +
       coverage);
 
 
-/* =============================================================================
+/* 
  *  PHASE 3 — CHARTS
- * ============================================================================= */
+ *  */
 
 // 3.1 Usable-area fraction by year, split by country portion.
 // Read this chart first: pick two years where ALL THREE series are high. A year
@@ -294,9 +294,9 @@ print(ui.Chart.feature.byFeature(coverage, 'year', ['n_scenes_L30', 'n_scenes_S3
   }));
 
 
-/* =============================================================================
+/* 
  *  PHASE 4 — MAPS: WHERE the gaps are
- * ============================================================================= */
+ *  */
 //  A single AOI-wide percentage hides spatial structure: persistent cloud sits on
 //  the Imatong and Agoro-Agu highlands, so a year can look fine overall while one
 //  massif is unusable. Inspect two years side by side before committing.
@@ -327,9 +327,9 @@ Map.addLayer(aoi_parts.style({color: '#000000', fillColor: '00000000', width: 1}
 Map.addLayer(ee.Image().paint(aoi_union, 0, 2), {palette: ['#E07B39']}, 'PA union (buffered)');
 
 
-/* =============================================================================
+/* 
  *  PHASE 5 — OPTIONAL: export the coverage table for the write-up
- * ============================================================================= */
+ *  */
 //  Uncomment to get a CSV in Drive, then read it in R alongside the AOI audit.
 
 // Export.table.toDrive({
@@ -340,9 +340,9 @@ Map.addLayer(ee.Image().paint(aoi_union, 0, 2), {palette: ['#E07B39']}, 'PA unio
 // });
 
 
-/* =============================================================================
+/* 
  *  HOW TO READ THE RESULT — and what to decide
- * -----------------------------------------------------------------------------
+ * 
  *  1. From chart 3.1, shortlist years where pct_ok_all is high AND pct_ok_ssd is
  *     not far behind. A year carried only by the Uganda side is not a usable date.
  *  2. From chart 3.2, prefer a comfortable margin over MIN_CLEAR_OBS rather than a
@@ -358,4 +358,4 @@ Map.addLayer(ee.Image().paint(aoi_union, 0, 2), {palette: ['#E07B39']}, 'PA unio
  *     one year bias the change map.
  *
  *  Then set the two dates in scripts/gee/02_build_composites.js (next script).
- * ============================================================================= */
+ *  */
