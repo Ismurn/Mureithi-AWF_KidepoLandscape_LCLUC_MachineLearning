@@ -40,9 +40,9 @@
  */
 
 
-// =============================================================================
+// 
 // PHASE 0 — CONFIGURATION: the decisions from scripts 01 and 01b
-// =============================================================================
+// 
 
 // 0.1 THE TWO DATES AND THE WINDOW — the only lines that normally change.
 var WINDOW_NAME = 'dry_late';
@@ -97,9 +97,9 @@ var BANDS_S30    = ['B2', 'B3', 'B4', 'B8A', 'B11', 'B12'];
 var HLS_SR_SCALE = 0.0001;
 
 
-// =============================================================================
+// 
 // PHASE 1 — HELPERS
-// =============================================================================
+// 
 
 /** 1.1 Leap-safe window dates. Identical construction to scripts 01 and 01b. */
 function windowFor(windowName, year) {
@@ -197,9 +197,9 @@ function buildComposite(windowName, year) {
 }
 
 
-// =============================================================================
+// 
 // PHASE 2 — BUILD BOTH COMPOSITES
-// =============================================================================
+// 
 
 var comp1 = buildComposite(WINDOW_NAME, YEAR_1);
 var comp2 = buildComposite(WINDOW_NAME, YEAR_2);
@@ -211,9 +211,9 @@ print('Composite ' + YEAR_2 + ' (' + WINDOW_NAME + '): bands', comp2.bandNames()
 // the two can be compared at a glance before the exports are started.
 
 
-// =============================================================================
+// 
 // PHASE 3 — VISUAL CHECK BEFORE EXPORTING
-// =============================================================================
+// 
 // Export tasks take time and quota. Look at the composites first: a false-colour
 // pair makes gross failures obvious (a black stripe, a cloud bank that survived
 // masking, a seam between sensors).
@@ -230,9 +230,9 @@ Map.addLayer(comp2, visNbr, YEAR_2 + ' NBR (low = burnt)', false);
 Map.addLayer(ee.Image().paint(aoi_union, 0, 2), {palette: ['#E07B39']}, 'PA union');
 
 
-// =============================================================================
+// 
 // PHASE 4 — EXPORT
-// =============================================================================
+// 
 // Roughly 8,500 km2 at 30 m is about 9.4 million pixels; 10 Int16 bands is
 // roughly 190 MB per date. If Drive returns multiple tiles, raise maxPixels or
 // set fileDimensions, and mosaic them in R with terra::vrt().
