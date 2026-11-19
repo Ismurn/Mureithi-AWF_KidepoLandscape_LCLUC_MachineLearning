@@ -41,8 +41,8 @@
 
 //  0.1 Assets 
 var ASSET_ROOT = 'users/imnduta1/KidepoAOI-LULC-ML/';
-var aoi_union  = ee.FeatureCollection(ASSET_ROOT + 'kidepo_pa_union');
-var aoi_parts  = ee.FeatureCollection(ASSET_ROOT + 'kidepo_pa_parts');
+var aoi_union  = ee.FeatureCollection(ASSET_ROOT + 'kidepo_pa_union_shp');
+var aoi_parts  = ee.FeatureCollection(ASSET_ROOT + 'kidepo_pa_parts_shp');
 
 var aoi = aoi_union.geometry();
 
