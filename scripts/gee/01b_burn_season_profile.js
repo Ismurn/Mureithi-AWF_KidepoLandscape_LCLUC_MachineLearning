@@ -83,9 +83,9 @@ var BURN_COLL  = 'MODIS/061/MCD64A1';
 var BURN_SCALE = 500;   // m; native MCD64A1 resolution
 
 
-// =============================================================================
+// 
 // PHASE 1 — HELPERS
-// =============================================================================
+// 
 
 var burn = ee.ImageCollection(BURN_COLL).select('BurnDate');
 
@@ -148,9 +148,9 @@ var SUBAREAS = {
 };
 
 
-// =============================================================================
+// 
 // PHASE 2 — QUESTION 1: WHEN DOES THE AOI BURN?
-// =============================================================================
+// 
 // One row per year x calendar month. Aggregate in R to get the climatology; kept
 // disaggregated here so an unusual fire year stays visible rather than averaged
 // away.
@@ -170,9 +170,9 @@ for (var y = YEAR_START; y <= YEAR_END; y++) {
 var monthlyBurn = ee.FeatureCollection(monthlyRows);
 
 
-// =============================================================================
+// 
 // PHASE 3 — QUESTION 2: HOW MUCH BURNS INSIDE EACH WINDOW?
-// =============================================================================
+// 
 
 function burnStatsFor(windowName, year) {
   var win    = windowFor(windowName, year);
@@ -202,9 +202,9 @@ WINDOW_NAMES.forEach(function (nm) {
 var windowBurn = ee.FeatureCollection(windowRows);
 
 
-// =============================================================================
+// 
 // PHASE 4 — MAPS: WHERE AND HOW OFTEN IT BURNS
-// =============================================================================
+// 
 // Burn frequency over the study period, for each window. Areas that burn almost
 // every year are a persistent classification hazard, not a one-off: they will
 // read as bare in BOTH dates, which is at least consistent. Areas that burn
@@ -232,9 +232,9 @@ Map.addLayer(aoi_parts.style({color: '#000000', fillColor: '00000000', width: 1}
              {}, 'PA polygons');
 
 
-// =============================================================================
+// 
 // PHASE 5 — EXPORTS
-// =============================================================================
+// 
 
 Export.table.toDrive({
   collection:  monthlyBurn,
