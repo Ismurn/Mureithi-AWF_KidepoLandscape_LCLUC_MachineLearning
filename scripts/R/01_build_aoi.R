@@ -1,9 +1,8 @@
-# =============================================================================
 #  KIDEPO LANDSCAPE — LAND COVER / LAND USE CHANGE (LCLUC)
+
 #  Script 01 — Build the Area Of Interest (AOI) from WDPA protected-area polygons
-# -----------------------------------------------------------------------------
+
 #  PURPOSE
-#  -------
 #  Stage 0 of the hybrid GEE -> R pipeline. This script reads the per-protected-area
 #  WDPA/WDOECM shapefiles held on OneDrive, audits them against the protected-area
 #  register recorded in CLAUDE.md, dissolves them into a single AOI, and writes the
@@ -23,32 +22,27 @@
 #  OUTPUTS  ->  outputs/aoi/   (gitignored; fully regenerable by re-running this script)
 #
 #  HOW TO RUN
-#  ----------
 #  From the repo root, in PowerShell:
 #      & "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\01_build_aoi.R
 #  (Do NOT run this via Git Bash/MSYS — the MSYS `mingw64` DLLs on PATH shadow the
 #   GDAL libraries that `sf` links against and R segfaults on st_read().)
 #
-#  Author: Isaac Mureithi
-# =============================================================================
+#  Author: Isaac Mureithi - IMureithi@awf.org
 
-
-# =============================================================================
 #  PHASE 0 — SETUP: packages, paths, constants
-# =============================================================================
 
-## 0.1 Packages -------------------------------------------------------------
+## 0.1 Packages 
 if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
 pacman::p_load(sf, tidyverse, glue, jsonlite)
 
 sf::sf_use_s2(TRUE)  # spherical geometry for the WGS84 steps; areas are done in UTM
 
-## 0.1b Console helper ------------------------------------------------------
+## 0.1b Console helper 
 ## glue() strips one trailing newline, which otherwise runs consecutive progress
 ## messages together on one line. say() puts it back.
 say <- function(x) cat(x, "\n", sep = "")
 
-## 0.2 Paths ----------------------------------------------------------------
+## 0.2 Paths 
 ## The raw data live on OneDrive, OUTSIDE the repo. Note the apostrophe in
 ## "Uganda's" and the spaces — always build these with file.path(), never paste
 ## unquoted strings into a shell.
@@ -59,14 +53,14 @@ path.wdpa      <- file.path(path.data.root, "WDPA")
 path.out.aoi <- file.path("outputs", "aoi")
 dir.create(path.out.aoi, recursive = TRUE, showWarnings = FALSE)
 
-## 0.3 Coordinate reference systems ----------------------------------------
-crs.geo <- 4326   # WGS84 geographic — what GEE wants for vector assets
-crs.utm <- 32636  # UTM Zone 36N     — project working CRS for all area/distance maths
+## 0.3 Coordinate reference systems 
+crs.geo <- 4326   # WGS84 geographic - what GEE wants for vector assets
+crs.utm <- 32636  # UTM Zone 36N     - project working CRS for all area/distance maths
 
-## 0.4 Analysis constants ---------------------------------------------------
+## 0.4 Analysis constants 
 buffer.m <- 500   # metres; buffer applied to the dissolved union for edge safety
 
-## 0.5 Fail loudly if the data folder is not reachable ----------------------
+## 0.5 Fail loudly if the data folder is not reachable 
 ## OneDrive files can be cloud-only placeholders. If a file is a placeholder,
 ## st_read() fails as though it were missing, so check up front.
 if (!dir.exists(path.wdpa)) {
@@ -81,14 +75,12 @@ cat(" run:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 cat("================================================================\n")
 
 
-# =============================================================================
 #  PHASE 1 — THE PROTECTED-AREA REGISTER (expected inventory)
-# =============================================================================
+
 #  Reported sizes transcribed from CLAUDE.md. This is the EXPECTED inventory; it is
 #  deliberately kept separate from the shapefiles so that a PA missing from disk is
 #  reported rather than silently dropped. `folder` is the subfolder under WDPA/.
 #  `size.km2.reported` is the size as reported in the register (NA where not reported).
-# =============================================================================
 
 pa.register <- tribble(
   ~folder,                             ~pa.label,          ~country,      ~size.km2.reported,
@@ -111,11 +103,9 @@ say(glue("\n[1] Register lists {nrow(pa.register)} protected areas ",
          "({sum(!is.na(pa.register$size.km2.reported))} with a reported size).\n"))
 
 
-# =============================================================================
 #  PHASE 2 — DISCOVER AND READ THE SHAPEFILES
-# =============================================================================
 
-## 2.1 Find every polygon shapefile under WDPA/ ----------------------------
+## 2.1 Find every polygon shapefile under WDPA/ 
 pa.files <- list.files(path.wdpa, pattern = "\\.shp$", recursive = TRUE,
                        full.names = TRUE, ignore.case = TRUE)
 
@@ -132,7 +122,7 @@ pa.files.tbl <- tibble(
 
 say(glue("[2] Found {nrow(pa.files.tbl)} shapefile(s) in {n_distinct(pa.files.tbl$folder)} folder(s).\n"))
 
-## 2.2 Read each one, keeping a harmonised attribute subset ----------------
+## 2.2 Read each one, keeping a harmonised attribute subset 
 ## These data are in the newer WDPA/WDOECM schema: SITE_ID / SITE_PID rather than
 ## the classic WDPAID / WDPA_PID. Select defensively so a schema change surfaces as
 ## an explicit warning instead of a crash.
@@ -167,7 +157,7 @@ for (f in fields.absent) pa.raw[[f]] <- NA
 
 say(glue("    Read {nrow(pa.raw)} polygon feature(s); CRS = EPSG:{st_crs(pa.raw)$epsg}.\n"))
 
-## 2.3 Repair geometry -----------------------------------------------------
+## 2.3 Repair geometry 
 ## WDPA polygons quite often carry self-intersections / ring-order problems that
 ## break st_union() later. Fix now and report whether anything actually needed it.
 n.invalid <- sum(!st_is_valid(pa.raw))
@@ -183,11 +173,9 @@ if (any(!keep.poly)) {
 pa.clean <- pa.clean[keep.poly, ]
 
 
-# =============================================================================
 #  PHASE 3 — AUDIT: what is on disk vs. what the register expects
-# =============================================================================
 
-## 3.1 Per-PA computed area, in UTM 36N ------------------------------------
+## 3.1 Per-PA computed area, in UTM 36N 
 pa.utm <- st_transform(pa.clean, crs.utm)
 
 pa.areas <- pa.utm %>%
@@ -207,7 +195,7 @@ pa.areas <- pa.utm %>%
     .groups = "drop"
   )
 
-## 3.2 Join register <-> disk, and compute the discrepancy -----------------
+## 3.2 Join register <-> disk, and compute the discrepancy 
 ## Two different comparisons, which must not be conflated:
 ##
 ##   diff.gis.pct  computed area  vs  WDPA's own GIS_AREA attribute.
@@ -245,7 +233,7 @@ pa.audit %>%
   as.data.frame() %>%
   print(row.names = FALSE)
 
-## 3.3 Report register entries with no shapefile ---------------------------
+## 3.3 Report register entries with no shapefile 
 pa.absent <- pa.audit %>% filter(!on.disk)
 if (nrow(pa.absent) > 0) {
   cat("\n    !! IN THE REGISTER BUT NOT ON DISK:\n")
@@ -257,7 +245,7 @@ if (nrow(pa.absent) > 0) {
       "      a new subfolder under WDPA/ and re-run to include them.\n", sep = "")
 }
 
-## 3.4 Report shapefiles not in the register -------------------------------
+## 3.4 Report shapefiles not in the register 
 pa.unexpected <- pa.audit %>% filter(on.disk, is.na(pa.label))
 if (nrow(pa.unexpected) > 0) {
   cat("\n    !! ON DISK BUT NOT IN THE REGISTER (still included in the AOI):\n")
@@ -265,7 +253,7 @@ if (nrow(pa.unexpected) > 0) {
         row.names = FALSE)
 }
 
-## 3.5 OUR OWN CHECK: computed area must agree with WDPA's GIS_AREA ---------
+## 3.5 OUR OWN CHECK: computed area must agree with WDPA's GIS_AREA 
 ## A real failure mode. >1% means the geometry read, the validity repair or the
 ## projection is wrong, and the AOI cannot be trusted.
 pa.geom.bad <- pa.audit %>% filter(on.disk, !is.na(diff.gis.pct), abs(diff.gis.pct) > 1)
@@ -281,7 +269,7 @@ if (nrow(pa.geom.bad) > 0) {
            "{round(max(abs(pa.audit$diff.gis.pct), na.rm = TRUE), 2)}% for all PAs.\n\n"))
 }
 
-## 3.6 SOURCE-DATA NOTE: gazetted vs digitised extent -----------------------
+## 3.6 SOURCE-DATA NOTE: gazetted vs digitised extent 
 ## Not a bug — but it matters for how PA areas are quoted in the write-up, so it
 ## is reported explicitly rather than left for a reader to trip over.
 pa.gaz.gap <- pa.audit %>% filter(on.disk, !is.na(diff.rep.pct), abs(diff.rep.pct) > 10)
@@ -297,7 +285,7 @@ if (nrow(pa.gaz.gap) > 0) {
       "         as the legal designation.\n", sep = "")
 }
 
-## 3.7 OVERLAP BETWEEN PA POLYGONS -----------------------------------------
+## 3.7 OVERLAP BETWEEN PA POLYGONS 
 ## WDPA designations are frequently stacked: a wildlife reserve can sit partly
 ## inside a national park, and both are legitimate separate records. This does NOT
 ## affect the dissolved AOI (st_union collapses overlaps), but it DOES matter for
@@ -340,14 +328,14 @@ if (nrow(pa.overlaps) > 0) {
   cat("\n    No PA polygons overlap.\n")
 }
 
-## 4.1 Attach tidy labels to the individual PAs ----------------------------
+## 4.1 Attach tidy labels to the individual PAs 
 ## This is the layer used later for per-PA zonal statistics (exactextractr).
 aoi.pa <- pa.clean %>%
   left_join(pa.register %>% select(folder, pa.label, country), by = "folder") %>%
   mutate(pa.label = coalesce(pa.label, folder)) %>%
   relocate(pa.label, country, .after = folder)
 
-## 4.2 Dissolved union — the classification / reporting extent -------------
+## 4.2 Dissolved union — the classification / reporting extent 
 ## Union in UTM (planar) then transform back: avoids s2 edge cases where polygons
 ## merely touch, and keeps the buffer in Phase 4.3 in true metres.
 aoi.union.utm <- pa.utm %>%
@@ -359,20 +347,20 @@ aoi.union <- aoi.union.utm %>%
   st_transform(crs.geo) %>%
   st_sf(geometry = ., aoi = "kidepo.pa.union")
 
-## 4.3 Buffered union — the safe compositing/clip extent -------------------
+## 4.3 Buffered union — the safe compositing/clip extent 
 aoi.union.buf <- aoi.union.utm %>%
   st_buffer(buffer.m) %>%
   st_union() %>%
   st_transform(crs.geo) %>%
   st_sf(geometry = ., aoi = glue("kidepo.pa.union.buffer{buffer.m}m"))
 
-## 4.4 Bounding box over everything — the GEE compositing extent -----------
+## 4.4 Bounding box over everything — the GEE compositing extent 
 aoi.bbox <- aoi.union %>%
   st_bbox() %>%
   st_as_sfc() %>%
   st_sf(geometry = ., aoi = "kidepo.bbox")
 
-## 4.5 Extent arithmetic ---------------------------------------------------
+## 4.5 Extent arithmetic 
 area.pa.km2   <- as.numeric(st_area(aoi.union.utm)) / 1e6
 area.buf.km2  <- as.numeric(st_area(st_transform(aoi.union.buf, crs.utm))) / 1e6
 area.bbox.km2 <- as.numeric(st_area(st_transform(aoi.bbox, crs.utm))) / 1e6
@@ -398,14 +386,12 @@ say(glue("
 "))
 
 
-# =============================================================================
 #  PHASE 5 — EXPORT FOR THE GEE STAGE AND FOR LATER R SCRIPTS
-# =============================================================================
+
 #  GeoJSON in EPSG:4326 is the interchange format: Earth Engine ingests it directly,
 #  and st_read() reads it back without the 10-character field-name truncation that
 #  shapefiles impose. A zipped shapefile is also written because the Code Editor's
 #  asset uploader accepts that form too.
-# =============================================================================
 
 write.geo <- function(x, filename) {
   f <- file.path(path.out.aoi, filename)
@@ -416,7 +402,7 @@ write.geo <- function(x, filename) {
 
 cat("[5] EXPORTS\n")
 
-## 5.1 GeoJSONs ------------------------------------------------------------
+## 5.1 GeoJSONs 
 write.geo(aoi.pa,        "kidepo.pa.individual.geojson")
 write.geo(aoi.union,     "kidepo.pa.union.geojson")
 write.geo(aoi.union.buf, glue("kidepo.pa.union.buffer{buffer.m}m.geojson"))
@@ -453,12 +439,12 @@ if (isTRUE(zip.ok) && file.exists(path.zip)) {
            "          {path.shp.dir} by hand.\n\n"))
 }
 
-## 5.3 The audit table, as a CSV for the write-up -------------------------
+## 5.3 The audit table, as a CSV for the write-up 
 path.csv <- file.path(path.out.aoi, "kidepo_pa_audit.csv")
 write_csv(pa.audit %>% select(-matches("^geometry$")), path.csv)
 say(glue("    wrote  {path.csv}\n\n"))
 
-## 5.4 A machine-readable handle on the AOI extent, for the GEE script ----
+## 5.4 A machine-readable handle on the AOI extent, for the GEE script 
 ## The GEE script needs the bbox numerically. Writing it out means the two stages
 ## can never silently disagree about the extent.
 aoi.meta <- list(
@@ -481,13 +467,11 @@ writeLines(jsonlite::toJSON(aoi.meta, auto_unbox = TRUE, pretty = TRUE), path.js
 say(glue("    wrote  {path.json}\n\n"))
 
 
-# =============================================================================
 #  PHASE 6 — QC MAP
-# =============================================================================
+
 #  A deliberately plain overview: are the polygons where we expect, and is the
 #  bounding box as oversized as the scattered geometry implies? Publication-quality
 #  cartography comes later, with the classified rasters.
-# =============================================================================
 
 pa.labels.sf <- aoi.pa %>%
   group_by(pa.label, country) %>%
@@ -530,9 +514,7 @@ ggsave(path.png, gg.aoi, width = 7.5, height = 8, dpi = 200)
 say(glue("[6] wrote  {path.png}\n\n"))
 
 
-# =============================================================================
 #  PHASE 7 — NEXT STEP
-# =============================================================================
 
 cat("================================================================\n")
 cat(" DONE. Next:\n")
