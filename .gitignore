@@ -39,11 +39,59 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-# pkgdown site
-docs/
-
 # translation temp files
 po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# ---------------------------------------------------------------------------
+# Kidepo LCLUC project rules
+# ---------------------------------------------------------------------------
+
+# Imagery and large rasters — never commit (GEE exports, composites, masks)
+*.tif
+*.tiff
+*.vrt
+*.img
+*.hdf
+*.he5
+*.nc
+*.jp2
+*.pix
+*.grd
+*.gri
+# Sidecars that travel with rasters
+*.tfw
+*.aux.xml
+*.ovr
+*.rrd
+
+# Compressed bundles (downloads, shapefile zips, GEE export archives)
+*.zip
+*.gz
+*.tar
+*.7z
+
+# Data and outputs: keep the folders, ignore their contents
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Credentials and service-account keys — never commit
+*.json.key
+*service-account*.json
+*credentials*.json
+*client_secret*.json
+*.pem
+*.p12
+*.pfx
+.secrets/
+.ee_credentials
+.config/earthengine/
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+.DS_Store
