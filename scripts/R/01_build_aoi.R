@@ -408,6 +408,32 @@ write.geo(aoi.union,     "kidepo.pa.union.geojson")
 write.geo(aoi.union.buf, glue("kidepo.pa.union.buffer{buffer.m}m.geojson"))
 write.geo(aoi.bbox,      "kidepo.bbox.geojson")
 
+## 5.1b Zipped shapefile of individual PAs, for the GEE asset uploader
+path.pa.shp.dir <- file.path(path.out.aoi, "shp_pa_individual")
+dir.create(path.pa.shp.dir, showWarnings = FALSE)
+path.pa.shp <- file.path(path.pa.shp.dir, "kidepo_pa_parts.shp")
+st_write(aoi.pa, path.pa.shp, delete_dsn = file.exists(path.pa.shp), quiet = TRUE)
+
+path.pa.zip <- file.path(path.out.aoi, "kidepo_pa_parts_shp.zip")
+
+old.wd <- getwd()
+zip.ok.pa <- tryCatch({
+  setwd(path.pa.shp.dir)
+  utils::zip(zipfile = file.path("..", basename(path.pa.zip)),
+             files = list.files(".", pattern = "^kidepo_pa_parts\\."),
+             flags = "-q")
+  TRUE
+}, error   = function(e) FALSE,
+warning = function(w) FALSE,
+finally = setwd(old.wd))
+
+if (isTRUE(zip.ok.pa) && file.exists(path.pa.zip)) {
+  say(glue("    wrote  {path.pa.zip}  (ready for the GEE asset uploader)\n\n"))
+} else {
+  say(glue("    NOTE: could not create {path.pa.zip} automatically — zip the files in\n",
+           "          {path.pa.shp.dir} manually.\n\n"))
+}
+
 ## 5.2 Zipped shapefile of the dissolved union, for the GEE asset uploader -
 path.shp.dir <- file.path(path.out.aoi, "shp")
 dir.create(path.shp.dir, showWarnings = FALSE)
