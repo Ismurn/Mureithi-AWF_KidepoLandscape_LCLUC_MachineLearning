@@ -340,7 +340,7 @@ exportComposite(comp2, YEAR_2);
  *  4. Then classify: k-means first for a fast look at the class structure,
  *     Random Forest once the scheme is worth labelling for.
  *
- *  A caution carried from CLAUDE.md (caveat 2): the ARSET workflow trains one RF
+ *  A caution carried from INSTRUCTION.md (caveat 2): the ARSET workflow trains one RF
  *  on date 1 and applies it to both dates, assuming spectral signatures are
  *  stable across dates. In a fire-driven semi-arid landscape that assumption is
  *  shaky. Check it with the RF proximity / training-similarity diagnostic before
