@@ -108,19 +108,27 @@ function seasonStart(windowName, year) {
   return ee.Date.fromYMD(year + offset, SEASON_START_MONTH, 1);
 }
 
-/**
- * 1.3 Binary "burnt at any point in this period".
- * The guard handles a period with no MCD64A1 products, which would otherwise
- * return a bandless image and break the export.
+/*
+ * 1.3 There is deliberately NO separate "burnt at any point" function.
+ *
+ * The first version of this script computed the binary bands independently, as
+ * col.map(i => i.gt(0).unmask(0)).max() wrapped in an ee.Algorithms.If guard.
+ * Both binary bands exported as ZERO everywhere while days_since_burn came back
+ * correct from the same collection and the same dates — so the fires were
+ * found, and something between the reducer and the export discarded them. The
+ * most likely culprit is the If: its two branches had different projections
+ * (MODIS 500 m against a projectionless ee.Image.constant), and an image with
+ * no fixed projection sampled at 30 m evaluates to the constant.
+ *
+ * Rather than diagnose that further, both binary bands are now DERIVED from
+ * days_since_burn below. One computation path, no duplicated logic, and the
+ * bands cannot disagree with the age band because they are made from it.
+ *
+ * The emptiness guards have gone with it. They were protecting against a
+ * collection with no products, which cannot occur here: MCD64A1 runs from 2000
+ * and every window this project uses falls inside that. A guard that is never
+ * exercised is a guard that can only misbehave.
  */
-function burntAny(start, end) {
-  var col = burn.filterDate(start, end);
-  return ee.Image(
-      ee.Algorithms.If(col.size().gt(0),
-                       col.map(function (i) { return i.gt(0).unmask(0); }).max(),
-                       ee.Image.constant(0))
-    ).unmask(0);
-}
 
 /**
  * 1.4 Days between the most recent burn in the period and `end`.
@@ -156,15 +164,10 @@ function daysSinceBurn(start, end) {
       .rename('days_since_burn');
   });
 
-  // rename() AFTER the If: the fallback ee.Image.constant() carries the band
-  // name 'constant', so renaming inside only one branch would give the two
-  // branches different band names and addBands() would build a different raster
-  // depending on data availability.
-  return ee.Image(
-      ee.Algorithms.If(col.size().gt(0),
-                       stamped.min(),
-                       ee.Image.constant(NO_BURN))
-    )
+  // min() keeps the most recent fire. Every pixel that never burnt stays masked
+  // through the reduction and is then filled with the NO_BURN sentinel, so the
+  // band is complete and carries the MODIS projection throughout.
+  return stamped.min()
     .unmask(NO_BURN)
     .rename('days_since_burn');
 }
@@ -179,9 +182,19 @@ function burnRasterFor(year) {
   var win    = windowFor(WINDOW_NAME, year);
   var season = seasonStart(WINDOW_NAME, year);
 
-  var burntSeason = burntAny(season,    win.end).rename('burnt_season');
-  var burntWindow = burntAny(win.start, win.end).rename('burnt_in_window');
-  var daysSince   = daysSinceBurn(season, win.end);
+  var daysSince = daysSinceBurn(season, win.end);
+
+  // Both binary bands are derived from the age band — see note 1.3.
+  // days_since_burn is measured back from win.end, so a scar that burnt ON the
+  // window's opening day has an age equal to the window length, and anything
+  // younger burnt inside the window. NO_BURN is negative, so gte(0) separates
+  // burnt from unburnt without a second collection pass.
+  var winDays = ee.Number(win.end.difference(win.start, 'day'));
+
+  var burntSeason = daysSince.gte(0).rename('burnt_season');
+  var burntWindow = daysSince.gte(0)
+    .and(daysSince.lte(ee.Image.constant(winDays)))
+    .rename('burnt_in_window');
 
   return burntSeason
     .addBands(burntWindow)
