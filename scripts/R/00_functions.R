@@ -143,3 +143,44 @@ load.aoi <- function() {
 
 #' 3.6 Console helper — glue() eats one trailing newline.
 say <- function(x) cat(x, "\n", sep = "")
+
+#' 3.7 Is a binary change layer spatially clustered, or randomly scattered?
+#'
+#' Real land-cover change has edges — a cleared field, an expanding settlement.
+#' Pixel noise does not. Two layers can report the same "% changed" while one is
+#' a signal and the other is nothing.
+#'
+#' The test: among flagged pixels, count how many of the 8 neighbours are also
+#' flagged, and compare with what spatial randomness would give. If a fraction p
+#' of the area is flagged and flagging were random, a flagged pixel would average
+#' 8p flagged neighbours. Materially more than that means real patches.
+#'
+#' A ratio near 1 means noise. It does NOT follow that a high ratio means land
+#' COVER change: burn scars are coherent patches too. This separates signal from
+#' noise, not fire from clearing.
+#'
+#' @param mask01 SpatRaster of 0/1 (NA outside the area of interest)
+#' @return a one-row tibble
+change.coherence <- function(mask01) {
+
+  mask01 <- terra::as.int(mask01)
+
+  nb.sum <- terra::focal(mask01, w = matrix(1, 3, 3), fun = "sum",
+                         na.policy = "omit", na.rm = TRUE)
+
+  ## Neighbours flagged, excluding the focal pixel, over flagged pixels only.
+  nb.of.flagged <- terra::mask(nb.sum - mask01, mask01, maskvalues = c(0, NA))
+
+  p.flagged <- terra::global(mask01, "mean", na.rm = TRUE)[1, 1]
+  obs.nb    <- terra::global(nb.of.flagged, "mean", na.rm = TRUE)[1, 1]
+  exp.nb    <- 8 * p.flagged
+  pct.iso   <- 100 * terra::global(nb.of.flagged <= 1, "mean", na.rm = TRUE)[1, 1]
+
+  tibble::tibble(
+    pct.flagged     = 100 * p.flagged,
+    expected.nb     = exp.nb,
+    observed.nb     = obs.nb,
+    coherence.ratio = obs.nb / exp.nb,
+    pct.isolated    = pct.iso
+  )
+}
