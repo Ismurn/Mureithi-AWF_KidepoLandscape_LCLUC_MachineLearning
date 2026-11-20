@@ -41,7 +41,30 @@ set.seed(42)   # reproducible sampling and cluster initialisation
 # =============================================================================
 
 k.candidates <- 3:9      # range scanned for the elbow plot
-k.chosen     <- 6        # <<< set after reading outputs/classification/kmeans_elbow.png
+
+## k.chosen was originally set to 6 BEFORE the scan ran and never revisited,
+## which 03b_kmeans_diagnostics.R has now corrected the record on. What that
+## script found, so the choice is at least an informed one:
+##
+##     k   converged   % var   mean silhouette   % pixels ambiguous
+##     3      yes       71.1        0.523              16.1
+##     4      yes       78.7        0.490              18.9
+##     5      NO        81.7        0.442              24.1
+##     6      yes       84.1        0.440              24.8
+##     7+     NO        86+         0.43 and falling   26+
+##
+## Silhouette falls monotonically as k rises, so the structure the data actually
+## supports is about THREE strata, not six. At k=6 a QUARTER of pixels sit
+## ambiguously between clusters — and those are precisely the pixels that flip
+## between dates for no physical reason, which is a large part of why the raw
+## change figure came out at 44.6%.
+##
+## k=6 is kept here deliberately, as reconnaissance: it resolves burnt ground,
+## bare soil and the woodland gradient separately, which k=3 merges, and that
+## detail informs the class scheme for the supervised stage. But NOTHING
+## quantitative should be built on these six clusters. Use 06_change_magnitude.R
+## for change in spectral units, and the supervised classifier for classes.
+k.chosen     <- 6
 n.sample     <- 60000    # pixels sampled PER DATE for fitting
 kmeans.nstart <- 25      # restarts; k-means is sensitive to initialisation
 
