@@ -50,9 +50,9 @@
  */
 
 
-// =============================================================================
+// 
 // PHASE 0 — CONFIGURATION
-// =============================================================================
+// 
 // These MUST match scripts/gee/02_build_composites.js, or the exported rasters
 // will not align with the composites they are meant to explain.
 
@@ -83,9 +83,9 @@ var BURN_COLL = 'MODIS/061/MCD64A1';
 var MS_PER_DAY = 86400000;
 
 
-// =============================================================================
+// 
 // PHASE 1 — HELPERS
-// =============================================================================
+// 
 
 var burn = ee.ImageCollection(BURN_COLL)
   .filterBounds(aoiExport)
@@ -170,9 +170,9 @@ function daysSinceBurn(start, end) {
 }
 
 
-// =============================================================================
+// 
 // PHASE 2 — BUILD ONE BURN RASTER PER COMPARISON DATE
-// =============================================================================
+// 
 
 function burnRasterFor(year) {
 
@@ -201,9 +201,9 @@ var burn2019 = burnRasterFor(YEARS[0]);
 var burn2024 = burnRasterFor(YEARS[1]);
 
 
-// =============================================================================
+// 
 // PHASE 3 — SANITY CHECK BEFORE EXPORTING
-// =============================================================================
+// 
 // Expected, from the 01b burn profile: burnt_season should average close to
 // 0.197 for 2019 and 0.228 for 2024. A mean far from those means the season
 // window or the date arithmetic is wrong — check that before exporting.
@@ -240,9 +240,9 @@ Map.addLayer(burn2019.select('days_since_burn').updateMask(
 Map.addLayer(ee.Image().paint(aoi_union, 0, 2), {palette: ['#1b7837']}, 'PA union');
 
 
-// =============================================================================
+// 
 // PHASE 4 — EXPORT
-// =============================================================================
+// 
 // Same CRS, scale and region as the composites, so the two stack without
 // resampling. About 9.4 million pixels, 3 Int16 bands — a small file, since a
 // 500 m product replicated onto a 30 m grid compresses very well.
