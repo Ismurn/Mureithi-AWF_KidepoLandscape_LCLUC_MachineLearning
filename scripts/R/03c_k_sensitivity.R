@@ -116,15 +116,12 @@ classify <- function(r, centers.z) {
   terra::which.min(terra::rast(d))
 }
 
-## Patch-based size filter. Applied only to the already-small magnitude layer,
-## because patches() over a million scattered pixels is the slow step and the
-## un-filtered residual area is reported instead.
-apply.mmu <- function(mask01) {
-  m <- terra::subst(mask01, from = 0, to = NA)
-  pid <- terra::patches(m, directions = 8, zeroAsNA = TRUE)
-  keep <- terra::freq(pid) %>% as_tibble() %>% filter(count >= mmu.pixels)
-  out <- terra::ifel(pid %in% keep$value, 1, 0)
-  terra::subst(out, from = NA, to = 0)
+## The size filter now lives in 00_functions.R and uses terra::sieve(). The
+## local patches()-based copy that used to sit here was the reason this script
+## had to be run in the background; it is gone. Wrapped only to keep the
+## subst(NA -> 0) that the rest of this script expects.
+apply.mmu.local <- function(mask01) {
+  terra::subst(apply.mmu(mask01, mmu.ha = mmu.ha), from = NA, to = 0)
 }
 
 results <- list()
@@ -149,7 +146,7 @@ for (k in k.values) {
   residual <- terra::as.int(changed == 1 & switched == 0)
   strong   <- terra::as.int(residual == 1 &
                             abs(d.ndvi) > mag.threshold * comp.scale.int)
-  strong.mmu <- apply.mmu(strong)
+  strong.mmu <- apply.mmu.local(strong)
 
   g <- function(x) terra::global(x, "sum", na.rm = TRUE)[1, 1] * px.km2
 
@@ -244,7 +241,7 @@ readr::write_csv(res, file.path(path.out.cls, "k_sensitivity.csv"))
 strong.free <- terra::as.int(abs(d.ndvi) > mag.threshold * comp.scale.int &
                              switched == 0 &
                              well.supported)
-strong.free.mmu <- apply.mmu(strong.free)
+strong.free.mmu <- apply.mmu.local(strong.free)
 
 ## Restrict to the analysed area before any RATE is computed.
 ##

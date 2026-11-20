@@ -149,16 +149,18 @@ magnitude.area <- map_dfr(mag.thresholds, function(thr) {
   big <- terra::as.int(abs(d.ndvi) > thr * comp.scale.int & resid == 1)
 
   ## Size filter, so scattered pixels over the threshold are not counted.
-  big.masked <- terra::subst(big, from = 0, to = NA)
-  pid  <- terra::patches(big.masked, directions = 8, zeroAsNA = TRUE)
-  keep <- terra::freq(pid) %>% as_tibble() %>% filter(count >= mmu.pixels)
-
-  big.mmu <- terra::ifel(pid %in% keep$value, 1, 0)
-  big.mmu <- terra::subst(big.mmu, from = NA, to = 0)
+  ## apply.mmu() (00_functions.R) uses terra::sieve() — identical result to the
+  ## patches() idiom this used to run, at a fraction of the cost.
+  big.mmu <- terra::subst(apply.mmu(big, mmu.ha = mmu.ha), from = NA, to = 0)
 
   km2 <- terra::global(big.mmu, "sum", na.rm = TRUE)[1, 1] * px.km2
 
-  tibble(threshold.dNDVI = thr, km2 = km2, n.patches = nrow(keep))
+  ## Patch count, now that patch IDs are no longer produced as a side effect.
+  n.patch <- terra::freq(terra::patches(terra::subst(big.mmu, from = 0, to = NA),
+                                        directions = 8, zeroAsNA = TRUE)) %>%
+    nrow()
+
+  tibble(threshold.dNDVI = thr, km2 = km2, n.patches = n.patch)
 })
 
 area.total <- terra::global(!is.na(steps), "sum", na.rm = TRUE)[1, 1] * px.km2

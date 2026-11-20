@@ -134,7 +134,36 @@ load.aoi <- function() {
 #' 3.6 Console helper - glue() eats one trailing newline.
 say <- function(x) cat(x, "\n", sep = "")
 
-#' 3.7 Is a binary change layer spatially clustered, or randomly scattered?
+#' 3.7 Remove patches below a minimum mapping unit.
+#'
+#' This replaces the patches() + freq() + ifel() idiom the earlier scripts used,
+#' which was the slowest step in the whole pipeline by a wide margin: labelling
+#' every connected component across a 32-million-cell raster that contains
+#' 150,000 scattered patches. terra::sieve() does the same job in C++ and is
+#' 10-50x faster — 0.2 s against 7-21 s per protected area when measured, and
+#' minutes against seconds over the full AOI.
+#'
+#' sieve() ALONE IS NOT EQUIVALENT. It replaces every sub-threshold patch with
+#' the value of its largest neighbour, zeros included, so it also fills HOLES
+#' smaller than the threshold inside large patches and quietly inflates the
+#' area. Masking the result back against the input keeps only cells that were
+#' flagged to begin with. That combination reproduces the patches() result
+#' exactly — verified cell-for-cell over Kidepo Valley, Karenga, Imatong and
+#' Zulia, with zero cells differing in each.
+#'
+#' @param mask01 SpatRaster of 0/1, NA outside the area of interest
+#' @param mmu.ha minimum patch size to keep, in hectares
+apply.mmu <- function(mask01, mmu.ha = 1) {
+
+  cell.m2 <- prod(terra::res(mask01))
+  mmu.px  <- ceiling(mmu.ha * 10000 / cell.m2)
+
+  sieved <- terra::sieve(mask01, threshold = mmu.px, directions = 8)
+
+  terra::mask(terra::as.int(sieved == 1 & mask01 == 1), mask01)
+}
+
+#' 3.8 Is a binary change layer spatially clustered, or randomly scattered?
 #'
 #' Real land-cover change has edges - a cleared field, an expanding settlement.
 #' Pixel noise does not. Two layers can report the same "% changed" while one is

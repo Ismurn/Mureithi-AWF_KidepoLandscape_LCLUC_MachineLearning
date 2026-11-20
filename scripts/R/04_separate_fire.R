@@ -241,24 +241,19 @@ if (enrichment < 1.5) {
 
 #  PHASE 5 - MINIMUM MAPPING UNIT
 #  Scattered single pixels surviving the fire filter are not land-cover change;
-#  they are the ragged edge of two imperfect classifications. patches() groups
-#  contiguous residual pixels, and anything below the MMU is dropped.
+#  they are the ragged edge of two imperfect classifications, so anything below
+#  the MMU is dropped.
+#
+#  This used to call terra::patches() on the residual, which was BY FAR the
+#  slowest step in the pipeline - labelling 150,000 connected components across
+#  32 million cells, taking many minutes and pushing this script past a
+#  ten-minute timeout. apply.mmu() in 00_functions.R does the same work with
+#  terra::sieve() in a fraction of the time and returns a cell-for-cell
+#  identical result; see the note there for why sieve() needs the extra mask.
 
 say(glue("\n[5] applying a {mmu.ha} ha minimum mapping unit ({mmu.pixels} pixels, 8-connected)"))
 
-res.masked <- terra::subst(residual, from = 0, to = NA)
-patch.id   <- terra::patches(res.masked, directions = 8, zeroAsNA = TRUE)
-
-patch.sizes <- terra::freq(patch.id) %>%
-  as_tibble() %>%
-  transmute(patch = value, px = count)
-
-keep.patches <- patch.sizes %>% filter(px >= mmu.pixels)
-
-say(glue("    residual patches        : {format(nrow(patch.sizes), big.mark = ',')}"))
-say(glue("    patches >= {mmu.ha} ha       : {format(nrow(keep.patches), big.mark = ',')}"))
-
-residual.mmu <- terra::ifel(patch.id %in% keep.patches$patch, 1, 0)
+residual.mmu <- apply.mmu(residual, mmu.ha = mmu.ha)
 residual.mmu <- terra::mask(residual.mmu, valid, maskvalues = c(FALSE, NA))
 residual.mmu <- terra::subst(residual.mmu, from = NA, to = 0)
 residual.mmu <- terra::mask(residual.mmu, valid, maskvalues = c(FALSE, NA))

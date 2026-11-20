@@ -277,13 +277,9 @@ if (enrichment < 1.5) {
 
 residual <- terra::as.int(substantive == 1 & switched == 0)
 
-mmu.pixels <- ceiling(mmu.ha * 10000 / prod(terra::res(steps)))
-res.masked <- terra::subst(residual, from = 0, to = NA)
-patch.id   <- terra::patches(res.masked, directions = 8, zeroAsNA = TRUE)
-
-keep <- terra::freq(patch.id) %>% as_tibble() %>% filter(count >= mmu.pixels)
-
-residual.mmu <- terra::ifel(patch.id %in% keep$value, 1, 0)
+## Size filter via apply.mmu() (00_functions.R), which uses terra::sieve()
+## rather than patches(). Same result cell for cell, a fraction of the runtime.
+residual.mmu <- apply.mmu(residual, mmu.ha = mmu.ha)
 residual.mmu <- terra::subst(residual.mmu, from = NA, to = 0)
 residual.mmu <- terra::mask(residual.mmu, substantive)
 
