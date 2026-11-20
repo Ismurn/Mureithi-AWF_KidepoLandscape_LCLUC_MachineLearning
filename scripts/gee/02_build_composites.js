@@ -45,6 +45,30 @@
 // 
 
 // 0.1 THE TWO DATES AND THE WINDOW — the only lines that normally change.
+//
+// CHOSEN ON EVIDENCE from scripts 01 and 01b (2016-2026). The reasoning, so it
+// is not lost or silently reversed later:
+//
+//  Window — dry_late, despite dry_early having the better clear-observation
+//  record. A median composite assumes the surface is roughly STATIONARY across
+//  the window. dry_early breaks that assumption badly: 12-37% of the AOI burns
+//  while the imagery is being collected, so a pixel's observations straddle its
+//  own fire. In dry_late only 1-7% burns during the window; the Dec-Jan scars
+//  are already on the ground and ageing uniformly. A stable surface with fewer
+//  looks beats a shifting surface with more.
+//
+//  Years — 2019 and 2024 are the two LEAST burnt dry_late years on record here
+//  (19.7% and 22.8% of the AOI carrying scars by the window's end, against
+//  27-44% for every other year), they sit five years apart, both exceed 96%
+//  clear coverage in each country, and their observation densities are close
+//  (8.1 and 10.4 clear looks per pixel). Matching the two dates to each other
+//  matters more than either one's absolute quality: a 3-point difference in
+//  burnt area is the smallest available, and whatever fire signal survives is
+//  therefore near the floor.
+//
+//  Residual risk, to carry into the classification: ~20% of the AOI is burnt in
+//  BOTH composites. That is not noise to be wished away — the class scheme needs
+//  a burnt/bare class, which is what NBR is in the band stack for.
 var WINDOW_NAME = 'dry_late';
 var YEAR_1      = 2019;
 var YEAR_2      = 2024;
@@ -93,8 +117,19 @@ var BANDS_COMMON = ['BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2'];
 var BANDS_L30    = ['B2', 'B3', 'B4', 'B5',  'B6',  'B7'];
 var BANDS_S30    = ['B2', 'B3', 'B4', 'B8A', 'B11', 'B12'];
 
-// HLS v2 stores surface reflectance as Int16 with a 0.0001 scale factor.
-var HLS_SR_SCALE = 0.0001;
+// NO SCALE FACTOR IS APPLIED HERE — and that is deliberate.
+//
+// The HLS v002 collections in Earth Engine are already served in reflectance
+// units (roughly 0-1); the 0.0001 factor documented for the underlying HDF
+// products has been applied at ingestion. Applying it again multiplies the
+// reflectance by 1e-8, and the subsequent x10000 for Int16 then truncates every
+// band to ZERO.
+//
+// The failure is nearly invisible without a check, because NDVI, NDWI and NBR
+// are normalised differences and therefore scale-invariant: they come out
+// perfectly correct while the six reflectance bands are uniformly 0. That is
+// exactly what the first export of this script produced. Phase 2.5 below now
+// prints band means so it cannot happen silently again.
 
 
 // 
@@ -138,7 +173,6 @@ function prepProduct(collectionId, bandsIn, start, end) {
     .map(function (img) {
       var clear = clearBits(img);
       return img.select(bandsIn, BANDS_COMMON)
-        .multiply(HLS_SR_SCALE)
         .updateMask(clear)
         .copyProperties(img, ['system:time_start']);
     });
@@ -209,6 +243,44 @@ print('Composite ' + YEAR_2 + ' (' + WINDOW_NAME + '): bands', comp2.bandNames()
 
 // A band-count mismatch would silently break the stack in R. Both are printed so
 // the two can be compared at a glance before the exports are started.
+
+
+// =============================================================================
+// PHASE 2.5 — SANITY CHECK BEFORE SPENDING AN EXPORT ON IT
+// =============================================================================
+// Read these numbers before starting the tasks. The first run of this script
+// exported two 100 MB rasters in which every reflectance band was zero, and
+// nothing in the console said so — the indices were right, because a normalised
+// difference does not care about scale.
+//
+// EXPECTED, in stored Int16 units (reflectance and indices x 10000):
+//    BLUE GREEN RED      roughly   200 - 1500   (dry savanna, visible)
+//    NIR                 roughly  1500 - 3500
+//    SWIR1 SWIR2         roughly  1500 - 4000
+//    NDVI                roughly  1000 - 5000   (0.10 - 0.50)
+//    NDWI                negative over land
+//    NBR                 roughly -2000 - 5000
+//    clear_obs           a small positive count
+//
+// A reflectance mean of 0, or in the single digits, means the scale factor is
+// being applied twice. A mean in the tens of thousands means it is not being
+// applied at all. Either way, fix it before exporting.
+
+function bandMeans(img, label) {
+  // clear_obs is >= 0 on real data and -9999 only where the sentinel was
+  // written, so it makes a reliable valid-data mask for the check.
+  var valid = img.select('clear_obs').gt(0);
+  return img.updateMask(valid).reduceRegion({
+    reducer:    ee.Reducer.mean(),
+    geometry:   aoiExport,
+    scale:      480,        // coarse on purpose: a smoke test, not a statistic
+    maxPixels:  1e10,
+    bestEffort: true
+  }).set('composite', label);
+}
+
+print('SANITY CHECK ' + YEAR_1 + ' — band means, stored units:', bandMeans(comp1, YEAR_1));
+print('SANITY CHECK ' + YEAR_2 + ' — band means, stored units:', bandMeans(comp2, YEAR_2));
 
 
 // 

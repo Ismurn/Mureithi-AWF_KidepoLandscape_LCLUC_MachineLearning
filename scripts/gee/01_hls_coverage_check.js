@@ -49,12 +49,26 @@ var YEAR_START = 2016;   // first year both HLS sensors contribute
 // Karamoja is unimodal: long rains roughly Apr-Oct, sharp dry season Dec-Mar.
 // The two windows trade cloud against fire:
 //
-//   dry_early  1 Dec -> 31 Jan   vegetation still senescing, FEWER burn scars,
-//                                more cloud. Crosses the new year, so a row
-//                                labelled 2019 means Dec 2019 -> Jan 2020.
-//   dry_late   1 Feb -> 31 Mar   clearest skies, but PEAK burning. Burn scars
-//                                read as bare ground and can swamp the change
-//                                signal (CLAUDE.md caveat 1).
+//   dry_early  1 Dec -> 31 Jan   Crosses the new year, so a row labelled 2019
+//                                means Dec 2019 -> Jan 2020.
+//   dry_late   1 Feb -> 31 Mar   Same calendar year.
+//
+// MEASURED, not assumed (runs of this script and 01b, 2016-2026). Both of the
+// expectations this script was originally written around turned out to be wrong,
+// which is the reason for measuring:
+//
+//   - dry_early is NOT the cloudier window. It is the CLEARER one: it reaches
+//     >= MIN_CLEAR_OBS over ~100% of the AOI in 9 of 10 years (the exception is
+//     Dec 2019 - Jan 2020 at 62%), against 95-100% in only 6 of 11 for dry_late,
+//     and it carries more clear looks per pixel. Smoke from the Dec-Jan fires
+//     plausibly costs dry_late some observations by tripping Fmask.
+//   - dry_late is NOT the peak burning window. December is, followed by January
+//     and November. By February the burning is largely over: 1-7% of the AOI
+//     burns DURING dry_late against 12-37% during dry_early.
+//
+// The scars persist either way, so both windows image a landscape that is
+// 18-44% burnt. See 01b and the window note in 02 for which window that argues
+// for, and why.
 //
 // `endYearOffset` is 1 where the window crosses into the following year.
 // `lastStartYear` stops the sequence before a window that has not closed yet.
