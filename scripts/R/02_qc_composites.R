@@ -51,6 +51,21 @@ aoi <- load.aoi()
 aoi.union.v <- terra::vect(aoi$union)
 aoi.parts.v <- terra::vect(aoi$parts)
 
+## AOI-masked views of both dates.
+##
+## EVERY statistic below is computed on these, not on the raw rectangle. The
+## export is a rectangle roughly 3.4x the area of the PA union, and Earth Engine
+## writes pixels outside the clip geometry as 0 rather than as the -9999
+## sentinel — `.clip()` runs after `.unmask()`, so the sentinel only reaches
+## pixels masked INSIDE the clip region. Those zeros are real values as far as
+## NAflag is concerned, and they drag every band mean towards zero: the first
+## version of this script reported a mean RED of 0.027 when the median over
+## valid pixels is 0.097.
+mask.to.aoi <- function(r) terra::mask(terra::crop(r, aoi.union.v), aoi.union.v)
+
+r.a.aoi <- mask.to.aoi(r.a)
+r.b.aoi <- mask.to.aoi(r.b)
+
 say(glue("
 [1] GEOMETRY  (compareGeom passed, or we would not be here)
     window        : {comp$window}
@@ -70,13 +85,8 @@ say(glue("
 #  different object from one built from 15, and the change between two such
 #  pixels is mostly noise.
 
-obs.a <- r.a[["clear_obs"]]
-obs.b <- r.b[["clear_obs"]]
-
-## Restrict every statistic to the reporting extent — the PA union — rather than
-## the 500 m buffered export, so the numbers describe what will be reported on.
-obs.a.m <- terra::mask(terra::crop(obs.a, aoi.union.v), aoi.union.v)
-obs.b.m <- terra::mask(terra::crop(obs.b, aoi.union.v), aoi.union.v)
+obs.a.m <- r.a.aoi[["clear_obs"]]
+obs.b.m <- r.b.aoi[["clear_obs"]]
 
 obs.stats <- function(x, label) {
   v <- terra::global(x, fun = c("mean", "min", "max"), na.rm = TRUE)
@@ -114,21 +124,34 @@ say(glue("\n    Thin in EITHER date: {round(pct.thin.either, 2)}% of the PA area
 #  Reflectance outside 0-1 and indices outside -1..1 mean the scale factor or the
 #  nodata handling is wrong. Cheap to check, expensive to discover later.
 
-band.stats <- function(r, label) {
-  s <- terra::global(r[[c(comp.bands.sr, comp.bands.index)]],
-                     fun = c("mean", "min", "max"), na.rm = TRUE)
+## Computed on the AOI-masked raster and restricted further to pixels that
+## actually have observations: a pixel with clear_obs == 0 has no composite to
+## describe, and including it would understate every band.
+band.stats <- function(r.aoi, label) {
+
+  valid <- r.aoi[["clear_obs"]] > 0
+  r.v   <- terra::mask(r.aoi[[c(comp.bands.sr, comp.bands.index)]], valid,
+                       maskvalues = c(FALSE, NA))
+
+  s <- terra::global(r.v, fun = c("mean", "min", "max"), na.rm = TRUE)
+
+  ## The median is more informative than the mean for a skewed reflectance
+  ## distribution, and it is the number to sanity-check against expectation.
+  med <- terra::global(r.v, fun = function(x, ...) median(x, na.rm = TRUE))
+
   tibble(
-    date = label,
-    band = rownames(s),
-    mean = round(to.reflectance(s$mean), 4),
-    min  = round(to.reflectance(s$min),  4),
-    max  = round(to.reflectance(s$max),  4)
+    date   = label,
+    band   = rownames(s),
+    mean   = round(to.reflectance(s$mean), 4),
+    median = round(to.reflectance(med[, 1]), 4),
+    min    = round(to.reflectance(s$min),  4),
+    max    = round(to.reflectance(s$max),  4)
   )
 }
 
 cat("\n[3] BAND VALUES (rescaled to true units; reflectance 0-1, indices -1..1)\n\n")
-band.table <- bind_rows(band.stats(r.a, as.character(yr.a)),
-                        band.stats(r.b, as.character(yr.b)))
+band.table <- bind_rows(band.stats(r.a.aoi, as.character(yr.a)),
+                        band.stats(r.b.aoi, as.character(yr.b)))
 print(as.data.frame(band.table), row.names = FALSE)
 
 ## Problems worth stopping for are collected and reported together at the end,
@@ -188,8 +211,8 @@ if (nrow(degenerate.all) > 0) {
 #  commonly used "burnt or very sparse" cut in savanna. It is reported as a
 #  CONSISTENT YARDSTICK across the two dates, not as a burnt-area product.
 
-nbr.a <- terra::mask(terra::crop(r.a[["NBR"]], aoi.union.v), aoi.union.v)
-nbr.b <- terra::mask(terra::crop(r.b[["NBR"]], aoi.union.v), aoi.union.v)
+nbr.a <- r.a.aoi[["NBR"]]
+nbr.b <- r.b.aoi[["NBR"]]
 
 nbr.cut <- 0.1 * comp.scale.int
 

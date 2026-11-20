@@ -215,12 +215,24 @@ function buildComposite(windowName, year) {
 
   var clearObs = col.select('RED').count().unmask(0).rename('clear_obs');
 
+  // ORDER MATTERS: clip BEFORE unmask.
+  //
+  // With unmask() first and clip() last, the pixels removed by the clip stay
+  // masked, and Earth Engine writes them to the GeoTIFF as 0 — not as the
+  // sentinel. The export rectangle is about 3.4x the area of the AOI, so the
+  // file then carries a large field of zeros that look like real reflectance to
+  // anything reading it. Clipping first means every pixel outside the AOI gets
+  // the sentinel like any other masked pixel, and -9999 alone marks "no data".
+  //
+  // Exports made with the previous order are still usable: the R stage masks to
+  // the PA union before computing anything, which excludes the zero-fill either
+  // way. This simply removes the trap.
   return withIndices
     .multiply(SCALE_INT)          // reflectance and indices -> Int16 domain
     .addBands(clearObs)           // count stays unscaled
+    .clip(aoiExport)
     .unmask(NODATA)               // explicit sentinel, not a silent 0
     .toInt16()
-    .clip(aoiExport)
     .set({
       window:      windowName,
       year:        year,
