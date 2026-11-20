@@ -1,6 +1,5 @@
-# =============================================================================
-#  KIDEPO LANDSCAPE — LCLUC
-#  Script 03b — Did the k-means clustering actually work?
+#  KIDEPO LANDSCAPE - LCLUC
+#  Script 03b - Did the k-means clustering actually work?
 #
 #  WHY THIS EXISTS
 #  Script 03 ran, produced spatially coherent clusters and a change matrix, and
@@ -30,13 +29,12 @@
 #  points is 28 GB. The simplified version is the standard substitute and
 #  answers the same question.
 #
-#  HOW TO RUN — from the repo root, in PowerShell:
+#  HOW TO RUN - from the repo root, in PowerShell:
 #      & "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\03b_kmeans_diagnostics.R
 #
 #  OUTPUTS -> outputs/classification/
 #
 #  Author: Isaac Mureithi - IMureithi@awf.org
-# =============================================================================
 
 source("scripts/R/00_functions.R")
 
@@ -50,14 +48,12 @@ kmeans.nstart <- 25
 feat.bands    <- c(comp.bands.sr, comp.bands.index)
 
 cat("\n================================================================\n")
-cat(" KIDEPO LCLUC — 03b k-means diagnostics\n")
+cat(" KIDEPO LCLUC - 03b k-means diagnostics\n")
 cat(" run:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 cat("================================================================\n")
 
 
-# =============================================================================
-#  PHASE 1 — REBUILD THE SAME FEATURE SPACE AS 03
-# =============================================================================
+#  PHASE 1 - REBUILD THE SAME FEATURE SPACE AS 03
 
 comp <- load.composite.pair()
 aoi  <- load.aoi()
@@ -83,9 +79,7 @@ X.z <- scale(X)
 say(glue("[1] pooled sample: {format(nrow(X.z), big.mark = ',')} pixels, {ncol(X.z)} standardised features"))
 
 
-# =============================================================================
-#  PHASE 2 — FIT EACH k, AND RECORD WHETHER IT CONVERGED
-# =============================================================================
+#  PHASE 2 - FIT EACH k, AND RECORD WHETHER IT CONVERGED
 #  R signals the Quick-TRANSfer failure as a WARNING, not an error, so a script
 #  that ignores warnings will happily use a fit that never settled. Each fit is
 #  wrapped so the warning is captured rather than printed and forgotten.
@@ -137,9 +131,7 @@ best.k <- diag.tbl %>% filter(converged) %>% slice_max(mean.sil, n = 1) %>% pull
 say(glue("\n    Highest mean silhouette among converged fits: k = {best.k}"))
 
 
-# =============================================================================
-#  PHASE 3 — WHERE k=6 IS WEAK
-# =============================================================================
+#  PHASE 3 - WHERE k=6 IS WEAK
 
 km6 <- withCallingHandlers(
   kmeans(X.z, centers = 6, nstart = kmeans.nstart, iter.max = 100),
@@ -173,9 +165,7 @@ cat("\n    Cluster NDVI in order:",
     paste(round(sort(centers.true$NDVI), 3), collapse = ", "), "\n")
 
 
-# =============================================================================
-#  PHASE 4 — OUTPUT
-# =============================================================================
+#  PHASE 4 - OUTPUT
 
 readr::write_csv(diag.tbl, file.path(path.out.cls, "kmeans_diagnostics.csv"))
 
@@ -191,5 +181,7 @@ abline(v = 6, lty = 2, col = "grey50")
 dev.off()
 
 cat("\n================================================================\n")
-cat(" DONE — read [2] before trusting anything built on k=6.\n")
+cat(" DONE - read [2] before trusting anything built on k=6.\n")
 cat("================================================================\n\n")
+
+sessionInfo()

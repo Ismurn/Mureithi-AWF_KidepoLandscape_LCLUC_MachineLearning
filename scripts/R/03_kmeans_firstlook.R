@@ -1,6 +1,5 @@
-# =============================================================================
-#  KIDEPO LANDSCAPE — LCLUC
-#  Script 03 — Unsupervised (k-means) first look and change matrix
+#  KIDEPO LANDSCAPE - LCLUC
+#  Script 03 - Unsupervised (k-means) first look and change matrix
 #
 #  PURPOSE
 #  A fast, training-data-free read on the class structure of the landscape and
@@ -22,13 +21,12 @@
 #  would be counting coincidences. One shared feature space makes the change
 #  matrix mean what it appears to mean.
 #
-#  HOW TO RUN — from the repo root, in PowerShell:
+#  HOW TO RUN - from the repo root, in PowerShell:
 #      & "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\03_kmeans_firstlook.R
 #
 #  OUTPUTS -> outputs/classification/   (gitignored)
 #
 #  Author: Isaac Mureithi - IMureithi@awf.org
-# =============================================================================
 
 source("scripts/R/00_functions.R")
 
@@ -36,9 +34,7 @@ terra::terraOptions(progress = 0)
 set.seed(42)   # reproducible sampling and cluster initialisation
 
 
-# =============================================================================
-#  PHASE 0 — PARAMETERS
-# =============================================================================
+#  PHASE 0 - PARAMETERS
 
 k.candidates <- 3:9      # range scanned for the elbow plot
 
@@ -55,7 +51,7 @@ k.candidates <- 3:9      # range scanned for the elbow plot
 ##
 ## Silhouette falls monotonically as k rises, so the structure the data actually
 ## supports is about THREE strata, not six. At k=6 a QUARTER of pixels sit
-## ambiguously between clusters — and those are precisely the pixels that flip
+## ambiguously between clusters - and those are precisely the pixels that flip
 ## between dates for no physical reason, which is a large part of why the raw
 ## change figure came out at 44.6%.
 ##
@@ -72,14 +68,12 @@ kmeans.nstart <- 25      # restarts; k-means is sensitive to initialisation
 feat.bands <- c(comp.bands.sr, comp.bands.index)
 
 cat("\n================================================================\n")
-cat(" KIDEPO LCLUC — 03 k-means first look\n")
+cat(" KIDEPO LCLUC - 03 k-means first look\n")
 cat(" run:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 cat("================================================================\n")
 
 
-# =============================================================================
-#  PHASE 1 — LOAD, MASK, AND RESTRICT TO WELL-SUPPORTED PIXELS
-# =============================================================================
+#  PHASE 1 - LOAD, MASK, AND RESTRICT TO WELL-SUPPORTED PIXELS
 
 comp <- load.composite.pair()
 yr.a <- comp$years[1]
@@ -91,7 +85,7 @@ aoi.parts.v <- terra::vect(aoi$parts)
 
 ## Mask to the PA union. Beyond restricting the analysis to the reporting
 ## extent, this removes the zero-fill that Earth Engine writes outside the clip
-## geometry — zeros which would otherwise form a large, meaningless cluster of
+## geometry - zeros which would otherwise form a large, meaningless cluster of
 ## their own and distort every centroid.
 mask.to.aoi <- function(r) terra::mask(terra::crop(r, aoi.union.v), aoi.union.v)
 r.a <- mask.to.aoi(comp$a)
@@ -117,9 +111,7 @@ say(glue("
 "))
 
 
-# =============================================================================
-#  PHASE 2 — SAMPLE AND STANDARDISE
-# =============================================================================
+#  PHASE 2 - SAMPLE AND STANDARDISE
 
 samp.a <- terra::spatSample(r.a.f, n.sample, method = "random",
                             na.rm = TRUE, warn = FALSE)
@@ -149,9 +141,7 @@ X.z <- scale(X, center = feat.mu, scale = feat.sd)
 say(glue("[2] SAMPLE: {format(nrow(X), big.mark = ',')} pixels pooled across both dates, standardised."))
 
 
-# =============================================================================
-#  PHASE 3 — HOW MANY CLUSTERS DOES THE LANDSCAPE SUPPORT?
-# =============================================================================
+#  PHASE 3 - HOW MANY CLUSTERS DOES THE LANDSCAPE SUPPORT?
 #  The elbow is a guide, not an oracle. Within-cluster sum of squares always
 #  falls as k rises; what matters is where it stops falling steeply.
 
@@ -179,9 +169,7 @@ abline(v = k.chosen, col = "#d7301f", lty = 2)
 dev.off()
 
 
-# =============================================================================
-#  PHASE 4 — FIT THE SHARED MODEL
-# =============================================================================
+#  PHASE 4 - FIT THE SHARED MODEL
 
 km.fit <- kmeans(X.z, centers = k.chosen, nstart = kmeans.nstart, iter.max = 100)
 
@@ -200,7 +188,7 @@ centers.ordered <- centers.true[cluster.order, ] %>%
   mutate(cluster.new = row_number(), .before = 1)
 
 ## A tentative reading of each cluster. These are SUGGESTIONS from the spectral
-## signature, to be checked against imagery before they appear in any write-up —
+## signature, to be checked against imagery before they appear in any write-up -
 ## k-means knows nothing about land cover.
 ## NDVI alone does not separate these clusters: the three least-vegetated ones
 ## sit within 0.06 NDVI of each other and are distinguished by BRIGHTNESS and
@@ -235,9 +223,7 @@ centers.ordered %>%
   print(row.names = FALSE)
 
 
-# =============================================================================
-#  PHASE 5 — APPLY THE CENTROIDS TO BOTH DATES
-# =============================================================================
+#  PHASE 5 - APPLY THE CENTROIDS TO BOTH DATES
 #  Assignment is done with raster algebra rather than terra::predict() with an R
 #  callback: for each cluster it is one squared-distance surface, then which.min
 #  across them. That keeps the work inside terra's C++ rather than calling back
@@ -272,9 +258,7 @@ terra::writeRaster(cls.b, file.path(path.out.cls, glue("kmeans_k{k.chosen}_{yr.b
 say(glue("\n[5] classified both dates; rasters written to {path.out.cls}/"))
 
 
-# =============================================================================
-#  PHASE 6 — CLASS AREAS AND THE CHANGE MATRIX
-# =============================================================================
+#  PHASE 6 - CLASS AREAS AND THE CHANGE MATRIX
 
 px.km2 <- prod(terra::res(cls.a)) / 1e6   # 30 x 30 m = 0.0009 km2
 
@@ -315,7 +299,7 @@ changed.km2   <- total.km2 - unchanged.km2
 ##
 ## A raw "% changed" from clustered data flatters itself badly. Clusters are
 ## ordered by NDVI, so a pixel moving between NEIGHBOURING clusters has shifted
-## one step along a greenness gradient — which in a semi-arid rangeland is what
+## one step along a greenness gradient - which in a semi-arid rangeland is what
 ## a slightly different rainfall year, or a burn scar at a different age, looks
 ## like. It is not land-cover change.
 ##
@@ -357,9 +341,7 @@ readr::write_csv(centers.ordered, file.path(path.out.cls, "kmeans_centroids.csv"
 readr::write_csv(elbow,           file.path(path.out.cls, "kmeans_elbow.csv"))
 
 
-# =============================================================================
-#  PHASE 7 — BINARY CHANGE MASK AND MAPS
-# =============================================================================
+#  PHASE 7 - BINARY CHANGE MASK AND MAPS
 
 ## as.int() + explicit levels: plotting a LOGICAL SpatRaster as classes makes
 ## terra coerce the labels and warn ("NAs introduced by coercion"). Giving it a
@@ -370,7 +352,7 @@ levels(changed) <- data.frame(value = c(0, 1), label = c("same", "changed"))
 terra::writeRaster(changed, file.path(path.out.cls, "kmeans_change_mask.tif"),
                    overwrite = TRUE, datatype = "INT1U")
 
-## How far each pixel moved along the greenness ordering — far more useful than
+## How far each pixel moved along the greenness ordering - far more useful than
 ## the binary mask, because it shows WHERE the big transitions are rather than
 ## lumping a one-step drift in with a woodland-to-bare jump.
 steps <- terra::as.int(abs(cls.a - cls.b))
@@ -383,10 +365,10 @@ cls.pal <- scico::scico(k.chosen, palette = "batlow")
 png(file.path(path.out.cls, "kmeans_pair.png"), width = 1900, height = 1000, res = 150)
 par(mfrow = c(1, 2), mar = c(2, 2, 3, 5))
 terra::plot(cls.a, col = cls.pal, type = "classes",
-            main = glue("k-means k={k.chosen} — {yr.a}"))
+            main = glue("k-means k={k.chosen} - {yr.a}"))
 terra::plot(aoi.parts.v, add = TRUE, border = "grey20", lwd = 0.5)
 terra::plot(cls.b, col = cls.pal, type = "classes",
-            main = glue("k-means k={k.chosen} — {yr.b}"))
+            main = glue("k-means k={k.chosen} - {yr.b}"))
 terra::plot(aoi.parts.v, add = TRUE, border = "grey20", lwd = 0.5)
 dev.off()
 
@@ -404,9 +386,7 @@ dev.off()
 say(glue("[7] wrote change mask and 2 figures to {path.out.cls}/"))
 
 
-# =============================================================================
-#  PHASE 8 — IS THE CHANGE SPATIALLY COHERENT, OR IS IT SPECKLE?
-# =============================================================================
+#  PHASE 8 - IS THE CHANGE SPATIALLY COHERENT, OR IS IT SPECKLE?
 #  The decisive test, and the cheapest one to skip by accident.
 #
 #  Real land-cover change has EDGES: a cleared field, an expanding settlement, a
@@ -473,12 +453,10 @@ readr::write_csv(
   file.path(path.out.cls, "kmeans_change_coherence.csv"))
 
 
-# =============================================================================
-#  PHASE 8 — WHAT THIS DOES AND DOES NOT ESTABLISH
-# =============================================================================
+#  PHASE 8 - WHAT THIS DOES AND DOES NOT ESTABLISH
 
 cat("\n================================================================\n")
-cat(" DONE — but read this before quoting any of the numbers above.\n")
+cat(" DONE - but read this before quoting any of the numbers above.\n")
 cat("\n")
 cat(" - Clusters are SPECTRAL, not thematic. The `tentative` labels are read\n")
 cat("   off centroid signatures and must be checked against imagery before use.\n")
@@ -490,3 +468,5 @@ cat(" - Thin pixels were excluded; the areas describe well-supported pixels only
 cat(" - Next: a supervised Random Forest with real training data, and the\n")
 cat("   training-similarity check on cross-date transfer (CLAUDE.md caveat 2).\n")
 cat("================================================================\n\n")
+
+sessionInfo()

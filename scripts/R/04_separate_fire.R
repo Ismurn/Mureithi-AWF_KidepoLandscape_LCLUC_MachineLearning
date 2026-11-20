@@ -1,6 +1,5 @@
-# =============================================================================
-#  KIDEPO LANDSCAPE — LCLUC
-#  Script 04 — Separate fire from candidate land-cover change
+#  KIDEPO LANDSCAPE - LCLUC
+#  Script 04 - Separate fire from candidate land-cover change
 #
 #  THE PROBLEM THIS SOLVES
 #  Script 03 established that the change between the two dates is spatially
@@ -12,7 +11,7 @@
 #  will register as change while nothing about its land cover has altered.
 #
 #  THE APPROACH, AND ITS HONEST LIMIT
-#  We have no burnt-area raster locally — MODIS burned area lives in Earth
+#  We have no burnt-area raster locally - MODIS burned area lives in Earth
 #  Engine, and 01b exported only landscape totals. What those totals give us is
 #  a CALIBRATION: MODIS measured 19.7% of the AOI burnt by the end of the 2019
 #  window and 22.8% by the end of 2024. So for each date we take the NBR
@@ -28,14 +27,13 @@
 #  To validate it properly, export the MODIS masks as rasters from GEE and
 #  cross-tabulate. That is the natural next step, not a substitute for this one.
 #
-#  HOW TO RUN — from the repo root, in PowerShell:
+#  HOW TO RUN - from the repo root, in PowerShell:
 #      & "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\04_separate_fire.R
 #
 #  Requires scripts/R/03_kmeans_firstlook.R to have been run.
 #  OUTPUTS -> outputs/classification/
 #
 #  Author: Isaac Mureithi - IMureithi@awf.org
-# =============================================================================
 
 source("scripts/R/00_functions.R")
 
@@ -43,9 +41,7 @@ terra::terraOptions(progress = 0)
 set.seed(42)
 
 
-# =============================================================================
-#  PHASE 0 — PARAMETERS
-# =============================================================================
+#  PHASE 0 - PARAMETERS
 
 k.chosen <- 6          # must match what 03 was run with
 
@@ -67,14 +63,12 @@ mmu.pixels <- ceiling(mmu.ha * 10000 / prod(terra::res(terra::rast(composite.pat
 n.quantile.sample <- 500000   # pixels sampled to estimate NBR thresholds
 
 cat("\n================================================================\n")
-cat(" KIDEPO LCLUC — 04 Separating fire from land-cover change\n")
+cat(" KIDEPO LCLUC - 04 Separating fire from land-cover change\n")
 cat(" run:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 cat("================================================================\n")
 
 
-# =============================================================================
-#  PHASE 1 — LOAD
-# =============================================================================
+#  PHASE 1 - LOAD
 
 comp <- load.composite.pair()
 yr.a <- comp$years[1]
@@ -92,7 +86,7 @@ f.cls.a <- file.path(path.out.cls, glue("kmeans_k{k.chosen}_{yr.a}.tif"))
 f.cls.b <- file.path(path.out.cls, glue("kmeans_k{k.chosen}_{yr.b}.tif"))
 
 if (!all(file.exists(f.steps, f.cls.a, f.cls.b))) {
-  stop("Outputs from 03_kmeans_firstlook.R not found — run that script first.")
+  stop("Outputs from 03_kmeans_firstlook.R not found - run that script first.")
 }
 
 steps <- terra::rast(f.steps)
@@ -110,9 +104,7 @@ nbr.b <- terra::mask(nbr.b, valid, maskvalues = c(FALSE, NA))
 say(glue("[1] loaded classified layers and NBR for {yr.a} and {yr.b}"))
 
 
-# =============================================================================
-#  PHASE 2 — CALIBRATE A BURN-LIKE THRESHOLD PER DATE
-# =============================================================================
+#  PHASE 2 - CALIBRATE A BURN-LIKE THRESHOLD PER DATE
 #  Quantiles are estimated from a large random sample rather than every cell:
 #  an exact quantile over 32 million values would pull the whole band into
 #  memory for a number that a half-million-pixel sample pins down to three
@@ -139,14 +131,12 @@ say(glue("
 "))
 
 
-# =============================================================================
-#  PHASE 3 — THE FIRE TRANSITION
-# =============================================================================
+#  PHASE 3 - THE FIRE TRANSITION
 #  Four states. Only the two middle ones can generate spurious change.
-#    0  burn-like in neither date        — fire cannot explain any change here
-#    1  burn-like in A only              — scar present in A, gone by B
-#    2  burn-like in B only              — scar present in B, absent in A
-#    3  burn-like in both                — persistently low NBR; fire is a
+#    0  burn-like in neither date        - fire cannot explain any change here
+#    1  burn-like in A only              - scar present in A, gone by B
+#    2  burn-like in B only              - scar present in B, absent in A
+#    3  burn-like in both                - persistently low NBR; fire is a
 #                                          constant here, so it explains little
 
 fire.state <- burn.a * 1 + burn.b * 2
@@ -178,9 +168,7 @@ say(glue("
     apparent change, with no land-cover change whatsoever."))
 
 
-# =============================================================================
-#  PHASE 4 — ATTRIBUTE THE SUBSTANTIVE CHANGE
-# =============================================================================
+#  PHASE 4 - ATTRIBUTE THE SUBSTANTIVE CHANGE
 
 substantive <- terra::as.int(steps >= min.steps)
 sub.km2 <- terra::global(substantive, "sum", na.rm = TRUE)[1, 1] * px.km2
@@ -202,9 +190,7 @@ say(glue("
     residual: the candidate land-cover change, before any size filtering."))
 
 
-# =============================================================================
-#  PHASE 4.5 — IS THE FIRE FILTER ACTUALLY DOING ANYTHING?
-# =============================================================================
+#  PHASE 4.5 - IS THE FIRE FILTER ACTUALLY DOING ANYTHING?
 #  A filter that removes a chunk of the change looks productive whether or not
 #  it is removing the RIGHT chunk. If burn-state switching genuinely drives
 #  change, then pixels that switched should change far more often than pixels
@@ -253,9 +239,7 @@ if (enrichment < 1.5) {
 }
 
 
-# =============================================================================
-#  PHASE 5 — MINIMUM MAPPING UNIT
-# =============================================================================
+#  PHASE 5 - MINIMUM MAPPING UNIT
 #  Scattered single pixels surviving the fire filter are not land-cover change;
 #  they are the ragged edge of two imperfect classifications. patches() groups
 #  contiguous residual pixels, and anything below the MMU is dropped.
@@ -288,9 +272,7 @@ say(glue("
       {round(100 * res.mmu.km2 / (sum(fire.tab$km2)), 2)}% of the analysed area"))
 
 
-# =============================================================================
-#  PHASE 6 — IS THE RESIDUAL COHERENT?
-# =============================================================================
+#  PHASE 6 - IS THE RESIDUAL COHERENT?
 #  The same test script 03 applied to raw change, now applied to what survives.
 #  If the residual is coherent, it is worth taking to a supervised
 #  classification. If it has collapsed towards randomness, then the clustering
@@ -309,9 +291,7 @@ bind_rows(
   print(row.names = FALSE)
 
 
-# =============================================================================
-#  PHASE 7 — WHAT CHANGED INTO WHAT, IN THE RESIDUAL
-# =============================================================================
+#  PHASE 7 - WHAT CHANGED INTO WHAT, IN THE RESIDUAL
 
 cls.a.res <- terra::mask(cls.a, residual.mmu, maskvalues = c(0, NA))
 cls.b.res <- terra::mask(cls.b, residual.mmu, maskvalues = c(0, NA))
@@ -337,9 +317,7 @@ gain.loss %>%
   print(row.names = FALSE)
 
 
-# =============================================================================
-#  PHASE 8 — OUTPUTS
-# =============================================================================
+#  PHASE 8 - OUTPUTS
 
 terra::writeRaster(fire.state, file.path(path.out.cls, "fire_state.tif"),
                    overwrite = TRUE, datatype = "INT1U")
@@ -382,3 +360,5 @@ cat("  - Check the residual patches against high-resolution imagery before any\n
 cat("    of it is described as land-use change.\n")
 cat("  - Then: supervised Random Forest, with a burnt class in the scheme.\n")
 cat("================================================================\n\n")
+
+sessionInfo()

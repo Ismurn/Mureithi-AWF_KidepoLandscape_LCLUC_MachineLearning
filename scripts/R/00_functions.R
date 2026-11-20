@@ -1,25 +1,19 @@
-# =============================================================================
-#  KIDEPO LANDSCAPE — LCLUC
+#  KIDEPO LANDSCAPE - LCLUC
 #  Shared constants and helpers for the R stage
 #
 #  Sourced by the numbered scripts; it defines nothing that runs on its own.
 #      source("scripts/R/00_functions.R")
 #
 #  Author: Isaac Mureithi - IMureithi@awf.org
-# =============================================================================
 
 
-# =============================================================================
-#  PHASE 0 — PACKAGES
-# =============================================================================
+#  PHASE 0 - PACKAGES
 
 if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
 pacman::p_load(sf, terra, tidyverse, glue, scico, viridis, patchwork)
 
 
-# =============================================================================
-#  PHASE 1 — PATHS
-# =============================================================================
+#  PHASE 1 - PATHS
 
 ## Raw and GEE-derived data live on OneDrive, outside the repo.
 path.data.root <- "C:/Users/IsaacM/OneDrive - African Wildlife Foundation/R WORK/Uganda's Kidepo Region"
@@ -35,14 +29,12 @@ for (p in c(path.out.qc, path.out.cls)) {
 }
 
 
-# =============================================================================
-#  PHASE 2 — CONSTANTS
-# =============================================================================
+#  PHASE 2 - CONSTANTS
 #  These MUST agree with scripts/gee/02_build_composites.js. If the GEE encoding
 #  changes, change it here in the same commit.
 
 crs.geo <- 4326    # WGS84 geographic
-crs.utm <- 32636   # UTM Zone 36N — the working CRS for everything local
+crs.utm <- 32636   # UTM Zone 36N - the working CRS for everything local
 
 comp.window <- "dry_late"
 comp.years  <- c(2019, 2024)
@@ -57,9 +49,7 @@ comp.bands.index <- c("NDVI", "NDWI", "NBR")
 comp.bands.all   <- c(comp.bands.sr, comp.bands.index, "clear_obs")
 
 
-# =============================================================================
-#  PHASE 3 — HELPERS
-# =============================================================================
+#  PHASE 3 - HELPERS
 
 #' 3.1 Path to one exported composite.
 composite.path <- function(year, window = comp.window, dir = path.gee.out) {
@@ -72,7 +62,7 @@ composite.path <- function(year, window = comp.window, dir = path.gee.out) {
 #' by 10000 would materialise about a gigabyte of float temp files for no
 #' analytical gain: every band shares the same scale factor, so band ratios,
 #' distances and cluster structure are identical either way. Rescale only when a
-#' number has to be read by a human — use to.reflectance() for that.
+#' number has to be read by a human - use to.reflectance() for that.
 #'
 #' NAflag() is used rather than a reclassify: it tells GDAL to treat the sentinel
 #' as NA on read, which costs nothing, where `r[r == -9999] <- NA` would rewrite
@@ -101,14 +91,14 @@ load.composite <- function(year, window = comp.window, dir = path.gee.out) {
 }
 
 #' 3.3 Convert scaled bands to true units (reflectance 0-1, indices -1..1).
-#' Applied to a small object — a summary table or a cropped tile — not to a
+#' Applied to a small object - a summary table or a cropped tile - not to a
 #' full-size raster.
 to.reflectance <- function(x) x / comp.scale.int
 
 #' 3.4 Load both dates and refuse to continue unless they share a grid.
 #'
 #' CLAUDE.md caveat 3. The GEE script exports both dates with the same CRS,
-#' scale and region, which SHOULD align them — but "should" is not a check, and a
+#' scale and region, which SHOULD align them - but "should" is not a check, and a
 #' silent half-pixel offset would quietly corrupt every change statistic
 #' downstream.
 load.composite.pair <- function(years = comp.years, window = comp.window,
@@ -132,7 +122,7 @@ load.aoi <- function() {
   f.parts <- file.path(path.out.aoi, "kidepo.pa.individual.geojson")
 
   if (!file.exists(f.union) || !file.exists(f.parts)) {
-    stop("AOI files missing — run scripts/R/01_build_aoi.R first.")
+    stop("AOI files missing - run scripts/R/01_build_aoi.R first.")
   }
 
   list(
@@ -141,12 +131,12 @@ load.aoi <- function() {
   )
 }
 
-#' 3.6 Console helper — glue() eats one trailing newline.
+#' 3.6 Console helper - glue() eats one trailing newline.
 say <- function(x) cat(x, "\n", sep = "")
 
 #' 3.7 Is a binary change layer spatially clustered, or randomly scattered?
 #'
-#' Real land-cover change has edges — a cleared field, an expanding settlement.
+#' Real land-cover change has edges - a cleared field, an expanding settlement.
 #' Pixel noise does not. Two layers can report the same "% changed" while one is
 #' a signal and the other is nothing.
 #'

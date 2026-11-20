@@ -1,6 +1,5 @@
-# =============================================================================
-#  KIDEPO LANDSCAPE — LCLUC
-#  Script 03c — How much of the change was an artefact of choosing k=6?
+#  KIDEPO LANDSCAPE - LCLUC
+#  Script 03c - How much of the change was an artefact of choosing k=6?
 #
 #  THE QUESTION
 #  03b showed that the landscape supports about three robust spectral strata,
@@ -10,7 +9,7 @@
 #  done at the k the data actually supports?
 #
 #  HOW THE COMPARISON IS MADE FAIR
-#  "Cluster steps" cannot be compared across k — two steps out of six is not
+#  "Cluster steps" cannot be compared across k - two steps out of six is not
 #  two steps out of three. So the comparison rests on two k-independent
 #  measures instead:
 #
@@ -24,14 +23,13 @@
 #
 #  Measure 2 is the real test, and it is the one that would go in a write-up.
 #
-#  HOW TO RUN — from the repo root, in PowerShell:
+#  HOW TO RUN - from the repo root, in PowerShell:
 #      & "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\03c_k_sensitivity.R
 #
 #  Requires the composites and the 01c burn rasters.
 #  OUTPUTS -> outputs/classification/
 #
 #  Author: Isaac Mureithi - IMureithi@awf.org
-# =============================================================================
 
 source("scripts/R/00_functions.R")
 
@@ -46,14 +44,12 @@ mag.threshold <- 0.15      # |dNDVI| above which a change looks like conversion
 feat.bands    <- c(comp.bands.sr, comp.bands.index)
 
 cat("\n================================================================\n")
-cat(" KIDEPO LCLUC — 03c sensitivity of the change signal to k\n")
+cat(" KIDEPO LCLUC - 03c sensitivity of the change signal to k\n")
 cat(" run:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 cat("================================================================\n")
 
 
-# =============================================================================
-#  PHASE 1 — DATA
-# =============================================================================
+#  PHASE 1 - DATA
 
 comp <- load.composite.pair()
 yr.a <- comp$years[1]
@@ -90,9 +86,7 @@ area.total <- terra::global(!is.na(well.supported) & well.supported,
 say(glue("[1] analysed area: {format(round(area.total, 1), big.mark = ',')} km2 (both dates well supported)"))
 
 
-# =============================================================================
-#  PHASE 2 — ONE POOLED, STANDARDISED SAMPLE, SHARED BY BOTH k
-# =============================================================================
+#  PHASE 2 - ONE POOLED, STANDARDISED SAMPLE, SHARED BY BOTH k
 #  Both fits see exactly the same data, so any difference is down to k alone.
 
 samp <- bind_rows(
@@ -108,9 +102,7 @@ X.z <- scale(X, center = feat.mu, scale = feat.sd)
 say(glue("[2] pooled sample: {format(nrow(X.z), big.mark = ',')} pixels"))
 
 
-# =============================================================================
-#  PHASE 3 — CLASSIFY AND MEASURE CHANGE AT EACH k
-# =============================================================================
+#  PHASE 3 - CLASSIFY AND MEASURE CHANGE AT EACH k
 
 mmu.pixels <- ceiling(mmu.ha * 10000 / prod(terra::res(r.a)))
 
@@ -185,9 +177,7 @@ res <- bind_rows(results) %>%
          strong.mmu.pct = 100 * strong.mmu.km2 / area.total)
 
 
-# =============================================================================
-#  PHASE 4 — THE COMPARISON
-# =============================================================================
+#  PHASE 4 - THE COMPARISON
 
 cat("\n[3] CHANGE AT EACH k\n\n")
 res %>%
@@ -237,16 +227,14 @@ if (abs(ratio.final - 1) < 0.35) {
 readr::write_csv(res, file.path(path.out.cls, "k_sensitivity.csv"))
 
 
-# =============================================================================
-#  PHASE 5 — THE ESTIMATE WITH NO CLUSTERING AT ALL
-# =============================================================================
+#  PHASE 5 - THE ESTIMATE WITH NO CLUSTERING AT ALL
 #  If the answer depends on k, stop using k. Nothing about detecting a large
 #  spectral change requires clusters: the criteria are a big move in NDVI, no
 #  fire switch to explain it, and a patch large enough to be credible. All
 #  three are defined in sensor units and are reproducible by anyone.
 #
 #  This is the number that should go in a write-up, with the clustering kept
-#  for what it is genuinely good at — suggesting what the classes ARE.
+#  for what it is genuinely good at - suggesting what the classes ARE.
 #
 #  A note on comparing it with 06: that script started from "moved 2+ cluster
 #  steps", whereas Phase 3 above starts from "changed cluster at all". Different
@@ -261,7 +249,7 @@ strong.free.mmu <- apply.mmu(strong.free)
 ## Restrict to the analysed area before any RATE is computed.
 ##
 ## apply.mmu() ends with subst(NA -> 0), which fills the whole export rectangle
-## with zeros — and that rectangle is about 3.7x the PA union. Areas are
+## with zeros - and that rectangle is about 3.7x the PA union. Areas are
 ## unaffected, because they are a sum of ones. But change.coherence() divides by
 ## the flagged FRACTION, so leaving the fill in place deflates p and inflates the
 ## coherence ratio absurdly: it reported 76.6 before this mask was added, where
@@ -304,3 +292,5 @@ readr::write_csv(
 cat("\n================================================================\n")
 cat(" DONE.\n")
 cat("================================================================\n\n")
+
+sessionInfo()
