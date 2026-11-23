@@ -48,6 +48,18 @@ comp.bands.sr    <- c("BLUE", "GREEN", "RED", "NIR", "SWIR1", "SWIR2")
 comp.bands.index <- c("NDVI", "NDWI", "NBR")
 comp.bands.all   <- c(comp.bands.sr, comp.bands.index, "clear_obs")
 
+## Local solar time of the HLS overpass, in decimal hours. Landsat 8/9 cross
+## the descending node near 10:00 and Sentinel-2 near 10:30, and HLS merges
+## both, so 10.25 is the midpoint. Used by the illumination helpers in 3.9.
+##
+## This is an APPROXIMATION and the equation of time is ignored, together worth
+## up to about 4 degrees of hour angle. That matters less than it looks: the
+## error is the same in both comparison years, so it very nearly cancels in any
+## difference between them, which is the only quantity drawn on. Absolute
+## cos(i) from these helpers is indicative; a difference in cos(i) is a
+## measurement.
+overpass.solar.hour <- 10.25
+
 
 #  PHASE 3 - HELPERS
 
@@ -202,4 +214,61 @@ change.coherence <- function(mask01) {
     coherence.ratio = obs.nb / exp.nb,
     pct.isolated    = pct.iso
   )
+}
+
+
+#  PHASE 3.9 - SOLAR GEOMETRY AND TERRAIN ILLUMINATION
+#
+#  Used by 10_terrain_test.R to ask whether the candidate change is an artefact
+#  of how the sun struck these slopes. They live here rather than in that
+#  script so that scripts/R/tests/test_solar_geometry.R can validate the SAME
+#  code the analysis runs - a test holding its own copy of the arithmetic would
+#  drift away from it silently and then certify the wrong thing.
+#
+#  All angles are in DEGREES at the interface. Radians appear only inside.
+
+deg2rad <- function(d) d * pi / 180
+rad2deg <- function(r) r * 180 / pi
+
+#' 3.9.1 Solar declination in degrees, from day of year (Cooper's equation).
+#' Accurate to a few tenths of a degree, which is well inside what this is for.
+solar.declination <- function(doy) 23.44 * sin(deg2rad(360 * (doy + 284) / 365))
+
+#' 3.9.2 Solar zenith and azimuth at a place and time.
+#'
+#' Azimuth is measured CLOCKWISE FROM NORTH, the same convention GEE's
+#' ee.Terrain.aspect() uses, so the two can be differenced directly. Getting
+#' that convention wrong would put the sun in the west and invert every
+#' conclusion about which slopes are lit, so it is stated rather than assumed.
+#'
+#' @param doy       day of year, may be a vector
+#' @param lat.deg   latitude in degrees north, may be a vector
+#' @param solar.hour local solar time in decimal hours
+#' @return list of `zenith` and `azimuth`, both in degrees
+solar.position <- function(doy, lat.deg, solar.hour = overpass.solar.hour) {
+
+  dec <- deg2rad(solar.declination(doy))
+  phi <- deg2rad(lat.deg)
+  h   <- deg2rad(15 * (solar.hour - 12))   # negative before local noon
+
+  cos.z <- pmin(pmax(sin(phi) * sin(dec) + cos(phi) * cos(dec) * cos(h), -1), 1)
+  z     <- acos(cos.z)
+
+  sin.a <- -cos(dec) * sin(h) / sin(z)
+  cos.a <- (sin(dec) - sin(phi) * cos.z) / (cos(phi) * sin(z))
+
+  list(zenith  = rad2deg(z),
+       azimuth = (rad2deg(atan2(sin.a, cos.a)) + 360) %% 360)
+}
+
+#' 3.9.3 Cosine of the local solar incidence angle on an inclined surface.
+#'
+#' 1 means the sun is normal to the slope, 0 means grazing, below 0 means the
+#' slope is turned away from the sun and lit only by sky and neighbours. On
+#' flat ground it reduces to cos(zenith), which is the cheapest available check
+#' that the formula has been typed correctly.
+cos.illum <- function(slope.deg, aspect.deg, zenith.deg, azimuth.deg) {
+  s <- deg2rad(slope.deg);  o <- deg2rad(aspect.deg)
+  z <- deg2rad(zenith.deg); a <- deg2rad(azimuth.deg)
+  cos(z) * cos(s) + sin(z) * sin(s) * cos(a - o)
 }

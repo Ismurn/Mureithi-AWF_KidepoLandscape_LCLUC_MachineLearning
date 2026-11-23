@@ -49,6 +49,10 @@ not confirmed.
 | Change magnitude | `R/06_change_magnitude.R` | change in NDVI rather than cluster ranks |
 | Maps | `R/07_maps.R` | eight cartographic figures |
 | Sampling-bias test | `R/08_sampling_bias.R` | how much of the greening is observation depth |
+| Candidate examination | `R/09_check_candidates.R` | by-PA areas, patch sizes, boundary vs roughness, burn test |
+| Terrain and observation timing | `gee/01d_export_terrain.js` | elevation, slope, aspect, mean observation day per year |
+| Terrain-illumination test | `R/10_terrain_test.R` | whether the candidates are a light artefact |
+| Solar-geometry self-check | `R/tests/test_solar_geometry.R` | validates the illumination arithmetic in `R/10` |
 
 Composites are HLS (Landsat + Sentinel-2 harmonised), Fmask-masked, median
 over the window, with NDVI/NDWI/NBR and a clear-observation count carried as
@@ -306,12 +310,86 @@ than average before and greener still after.
 
 **What remains, none of it established:** genuine woody thickening or regrowth;
 differential terrain illumination, since candidates favour rough, hilly ground
-in reserves that are mostly forested massifs; or real land-use change. Settling
-it needs a DEM (slope and aspect, to test the illumination explanation) and
-high-resolution imagery. One caution on the patch statistics: eight-connected
+in reserves that are mostly forested massifs; or real land-use change. The
+illumination explanation is the one that can be settled from orbit, and §7.3
+sets out the test. Separating the other two needs high-resolution imagery or a
+multi-year series. One caution on the patch statistics: eight-connected
 labelling threads scattered clumps into one component, so the "largest patch,
 3,064 ha" is a sprawl across a hillside, not a block. The median patch is
 2.34 ha.
+
+---
+
+### 7.3 The terrain-illumination test — designed, not yet run
+
+**Status: awaiting the GEE export.** `gee/01d_export_terrain.js` and
+`R/10_terrain_test.R` are written and syntax-checked; the test cannot run until
+`kidepo_terrain_dry_late_utm36n_30m.tif` is exported and downloaded. What
+follows is the design and the expectations set in advance of seeing the data —
+recorded here so the eventual result cannot be read as a story told around
+whatever came out.
+
+**The hypothesis.** Reflectance on a slope depends on how the sun strikes it.
+The candidates favour rough, hilly ground, so some of the "change" could be
+light rather than land.
+
+**Why the hypothesis is already in trouble, on mechanism.** Both composites use
+the *same calendar window*, 1 Feb – 31 Mar. The sun is therefore in nearly the
+same place in both, so the local illumination geometry cos(i) is nearly the same
+in both, so it very largely **cancels in the difference**. Illumination sets the
+*level* of reflectance on a slope; it cannot by itself produce a *change*
+between two same-season composites. For it to do so, something about the
+observations must differ between the years, which leaves two routes:
+
+- **Route 1 — timing.** If one year's clear looks fall earlier or later in the
+  window, the sun sat at a different declination and cos(i) shifts, most on
+  steep slopes. The export's `obs_doy_<year>` bands measure this per pixel.
+- **Route 2 — shadow masking.** Fmask cannot tell terrain shadow from cloud
+  shadow, so shaded slopes lose observations. §7.1 already attributed 28% of the
+  greening to observation depth; if that artefact concentrates on steep ground,
+  terrain is its mechanism. This is the version most likely to survive — and it
+  is not really about illumination at all, but about where the §7.1 confound
+  lives.
+
+**What the test can see.** Validated by simulation before the export, in
+`R/tests/test_solar_geometry.R`: the differenced estimator recovered a planted
+coefficient of 0.30 as **0.3002** over 40 replications with no detectable bias
+(t = +0.09), and its reported standard error matched the empirical spread. At
+n = 400,000 the standard error on the coefficient is about 0.007, so the test
+has ample power.
+
+**What it cannot see is a large effect, because there isn't one available.** The
+greening illumination can explain is the coefficient times the mean shift in
+cos(i), and for a timing shift of a few days that shift is of order 0.004:
+
+| Coefficient | Greening explained | Share of +0.0127 |
+|---|---|---|
+| 0.1 | +0.0004 | 3% |
+| 0.3 | +0.0012 | 9% |
+| 0.5 | +0.0020 | 16% |
+| 1.0 | +0.0040 | 32% |
+
+NDVI's cross-sectional spread across aspects in rugged terrain is rarely more
+than ~0.1 per unit cos(i), so coefficients near 1.0 are not physically
+available. **The ceiling is single-digit percent unless the two years were
+observed many days apart** — which is exactly what Phase 2 of the script
+measures, and why the obs_doy bands matter more here than the DEM does.
+
+**The diagnostic to watch is aspect, not slope.** "Candidates are steeper" is
+ambiguous: woody vegetation genuinely prefers hills in Karamoja. But there is no
+ecological reason for regrowth to prefer west-facing over east-facing ground at
+the same slope and elevation, whereas illumination has exactly that signature —
+at a mid-morning overpass the sun sits east-southeast (computed: zenith 26–34°,
+azimuth 89–130° across the window), so east-facing slopes are lit and
+west-facing ones are not. A north–south asymmetry would *not* be illumination:
+at 3–4°N the sun passes nearly overhead and both are lit about equally.
+
+**Reading the result.** If cos(i) barely moved and there is no aspect
+fingerprint, the hypothesis is closed on mechanism and two explanations remain
+that this two-date design cannot separate. If illumination does prove material,
+the composites need a topographic correction (C-correction or SCS+C) *before*
+the supervised stage — otherwise the Random Forest would learn illumination as
+if it were land cover.
 
 ---
 
@@ -395,11 +473,19 @@ Recorded because each was invisible until specifically tested for.
 
 ## 11. Next
 
-1. **Agree a class scheme** before labelling. The k=3 strata are a sensible
+1. **Run `gee/01d_export_terrain.js`** and download both outputs, then
+   `R/10_terrain_test.R`. This is the blocking step: it settles §7.3, and it also
+   decides whether the composites need a topographic correction *before* the
+   supervised stage — a Random Forest trained on uncorrected slopes would learn
+   illumination as if it were land cover. `R/tests/test_solar_geometry.R` already
+   passes, so the arithmetic is not what is waiting.
+2. **Agree a class scheme** before labelling. The k=3 strata are a sensible
    skeleton; burnt vs bare and grassland vs wooded grassland need training data.
-2. **Training data** for the supervised stage — the open decision.
-3. **Check candidate patches** against high-resolution imagery before any is
-   described as land-use change.
-4. **Consider a time series.** The central limitation is two dates. An annual
+3. **Training data** for the supervised stage — the open decision.
+4. **Check candidate patches** against high-resolution imagery before any is
+   described as land-use change. Neither §7.2 nor §7.3 can do this; it needs eyes
+   on imagery this pipeline does not carry.
+5. **Consider a time series.** The central limitation is two dates. An annual
    NDVI series across the same window would separate trend from the inter-annual
-   variability that dominates here, and is cheap in GEE.
+   variability that dominates here, and is cheap in GEE. No amount of care with
+   the two dates we have will substitute for it.
