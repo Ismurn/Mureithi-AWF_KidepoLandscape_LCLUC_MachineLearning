@@ -47,6 +47,8 @@ not confirmed.
 | k sensitivity | `R/03c_k_sensitivity.R` | k=3 vs k=6, cluster-free estimate |
 | Fire attribution | `R/04`, `R/05` | proxy vs MODIS record |
 | Change magnitude | `R/06_change_magnitude.R` | change in NDVI rather than cluster ranks |
+| Maps | `R/07_maps.R` | eight cartographic figures |
+| Sampling-bias test | `R/08_sampling_bias.R` | how much of the greening is observation depth |
 
 Composites are HLS (Landsat + Sentinel-2 harmonised), Fmask-masked, median
 over the window, with NDVI/NDWI/NBR and a clear-observation count carried as
@@ -93,8 +95,8 @@ clear looks per pixel).
 excluded from all change statistics. Grids are identical (4559 × 7009, 30 m,
 EPSG:32636), verified with `compareGeom` rather than assumed.
 
-**Caveat:** 2019 has ~25% fewer clear looks than 2024. Some of the greening gap
-below could be composite depth rather than ground.
+**This was tested, not just flagged** — see §7.1. About 28% of the greening is
+attributable to 2024's better sampling; the remaining 72% is not.
 
 ---
 
@@ -230,6 +232,41 @@ Land-cover conversion produces clearing as well as regrowth, so a conversion
 signal would sit near 50% greening. A landscape moving one way together is a
 wetter or later-senescing season, and no burn mask can remove it.
 
+### 7.1 Is the greening just unequal sampling?
+
+2019 carries 8.2 mean clear looks against 2024's 10.5. If cloud screening
+removed proportionally more of the greener, cloudier days from 2019, that alone
+would manufacture the result. `R/08_sampling_bias.R` tests it three ways.
+
+The decisive test regresses ΔNDVI on the per-pixel **depth gap** with
+protected-area fixed effects. Differencing the same pixel across two dates
+cancels everything time-invariant about it — terrain, soil, land cover — leaving
+the depth gap as what varies:
+
+| | ΔNDVI |
+|---|---|
+| Mean observed | +0.0176 |
+| Attributable to the depth gap | **+0.0049 (28%)** |
+| Remaining at zero depth gap | **+0.0127 (72%)** |
+
+**The greening is real but was overstated.** Quote roughly **+0.013**, not
++0.018, and to one significant figure — estimates range from +0.009 to +0.019
+across balanced subsets.
+
+Two methodological notes, because the tests disagreed and the disagreement is
+instructive:
+
+- A *within-date* regression of NDVI on observation count comes out **negative**
+  in both years, which would suggest the mechanism cannot operate at all. That
+  comparison is between different pixels, and the ones with fewer looks are the
+  cloudy highlands, which are also the green ones. It measures geography as much
+  as sampling, and is the weaker estimate.
+- Restricting to "balanced" subsets does **not** hold the landscape fixed: mean
+  looks climb from 8.2/10.5 to 14.3/14.5 as the rule tightens, so the strictest
+  subset is the 7.4% of the landscape with the clearest skies. Those subsets
+  confound depth balancing with spatial selection, which is why their medians
+  bounce rather than trend. They establish only that every subset still greens.
+
 ---
 
 ## 8. What this does and does not establish
@@ -253,7 +290,10 @@ wetter or later-senescing season, and no burn mask can remove it.
 
 **Carry these caveats:**
 
-1. 2019 has ~25% fewer clear observations than 2024.
+1. 2019 has ~25% fewer clear observations than 2024. Tested (§7.1): it inflates
+   the greening by about 28%, so the corrected figure is ~+0.013 ΔNDVI. The
+   candidate-change areas in §7 have **not** been recomputed on a depth-adjusted
+   basis and are therefore likely a little generous.
 2. MODIS burned area is 500 m information — good for landscape attribution, not
    for per-patch verdicts.
 3. Two dates cannot separate inter-annual variability from trend. A multi-year
