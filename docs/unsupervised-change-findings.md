@@ -53,6 +53,9 @@ not confirmed.
 | Terrain and observation timing | `gee/01d_export_terrain.js` | elevation, slope, aspect, mean observation day per year |
 | Terrain-illumination test | `R/10_terrain_test.R` | whether the candidates are a light artefact |
 | Solar-geometry self-check | `R/tests/test_solar_geometry.R` | validates the illumination arithmetic in `R/10` |
+| Annual NDVI series | `gee/03_ndvi_timeseries.js` | 11 years × (NDVI, clear looks, burnt) on the composite grid |
+| Trend and trajectory analysis | `R/11_ndvi_timeseries.R` | trend vs variability; candidate trajectories |
+| Trend-estimator self-check | `R/tests/test_trend_estimators.R` | validates the closed forms and the DiD in `R/11` |
 
 Composites are HLS (Landsat + Sentinel-2 harmonised), Fmask-masked, median
 over the window, with NDVI/NDWI/NBR and a clear-observation count carried as
@@ -393,6 +396,79 @@ if it were land cover.
 
 ---
 
+### 7.4 The annual series — designed, not yet run
+
+**Status: awaiting the GEE export.** `gee/03_ndvi_timeseries.js` and
+`R/11_ndvi_timeseries.R` are written and syntax-checked;
+`R/tests/test_trend_estimators.R` passes all 20 of its checks. The export is
+three 11-band stacks — annual dry-season NDVI, clear-look counts, and burnt
+masks for 2016–2026 — totalling roughly 300–350 MB, the largest download in the
+project.
+
+**The most important thing this work established, it established before the
+export existed.** The series cannot give a trustworthy *absolute* trend, and the
+reason is in this project's own coverage record. Mean clear looks per pixel in
+the dry_late window:
+
+| | | | | |
+|---|---|---|---|---|
+| 2016 **4.05** | 2017 **3.15** | 2018 6.10 | 2019 8.13 | 2020 4.75 |
+| 2021 7.00 | 2022 10.96 | 2023 11.25 | 2024 10.41 | 2025 **13.85** |
+
+That is the satellite constellation growing — Sentinel-2B from 2017, Landsat 9
+from 2021 — not the weather. Year and observation depth are therefore nearly the
+same variable across this record, and §7.1 established that on this data more
+looks produce higher NDVI.
+
+Simulated in `test_trend_estimators.R` with a depth response taken from §7.1 and
+the real year-by-year look counts: **a population whose true trend is exactly
+zero reads +0.0024 NDVI/year, which over a five-year gap is +0.0121 — against
+the +0.0127 the headline claims.** A denser archive alone can manufacture
+essentially the entire signal. Any single "depth-adjusted trend" quoted from an
+11-year series here would be a claim the data cannot carry.
+
+**This does not undercut §7.1; it supports the choice of dates.** 2019 and 2024
+sit at 8.13 and 10.41 looks — a gap of 2.3, which is what §7.1 measured and
+corrected for. The confound is severe across the *record* precisely because the
+record spans a tripling of coverage, and mild between *those two years* because
+they are close in depth. A differenced comparison between two similar years is
+more defensible than a trend through all of them.
+
+**So the script is built around comparisons where the confound cancels.** Both
+the depth trend and the rainfall history are common to every pixel in a
+landscape this size, so they subtract out when candidates are compared with
+their own background. Four questions, in order of what they can settle:
+
+1. **Do candidates trend faster than background?** A difference-in-differences
+   with PA fixed effects. Validated: with a common depth confound planted
+   alongside a candidate-only trend of +0.004/yr, the naive per-group estimate
+   reads +0.0065 for candidates and +0.0024 for a truly flat background, while
+   the DiD recovers **+0.0040** — and reads zero when no candidate trend is
+   planted.
+2. **Do they move steadily or bounce?** Per-pixel R² of a linear fit. Steady
+   movement and an equal-sized random swing are separated cleanly in simulation
+   (median R² 0.69 against 0.05).
+3. **Was 2019 a dip for the candidates specifically?** Each group against its
+   own 2018 and 2020, so a landscape-wide bad year drops out. Validated both
+   ways: a planted candidate-only dip is recovered, a planted landscape-wide one
+   is correctly *not* reported as an anomaly.
+4. **How large is the 2019→2024 step against ordinary year-to-year spread?**
+
+**One calibration that matters for reading the output.** Absolute R² is not a
+usable threshold on this data. Over nine years at the year-to-year noise this
+landscape carries (~0.04 NDVI), the median R² of a *genuine* linear trend is
+0.16 at +0.005/yr and only 0.39 at +0.010/yr, against ~0.09 for pure noise. An
+R² of 0.15 is not evidence of no trend — only the gap between the two groups
+carries information.
+
+**Fire is the second confound.** Cumulative burnt fraction runs from 19.7%
+(2019) to 43.9% (2018), and 2019 and 2024 are the two least-burnt years on
+record — which is why §3 chose them, and which means the pair sits at one end of
+the fire distribution. The burnt stack is exported so this is handled rather
+than hoped away.
+
+---
+
 ## 8. Maps and figures
 
 All generated by `R/07_maps.R` into `outputs/maps/` (gitignored — re-run the
@@ -449,12 +525,19 @@ no scale bars, no north arrows — and should not go in a report.
    basis and are therefore likely a little generous.
 2. MODIS burned area is 500 m information — good for landscape attribution, not
    for per-patch verdicts.
-3. Two dates cannot separate inter-annual variability from trend. A multi-year
-   time series would.
+3. Two dates cannot separate inter-annual variability from trend. The series
+   that would is designed and tested (§7.4) and awaits its export. Note what it
+   will and will not deliver: a candidate-versus-background contrast, not an
+   absolute trend, because observation depth roughly triples across the record
+   and can by itself manufacture a greening the size of the headline.
 4. Protected-area polygons overlap by 584 km², so per-PA areas double-count
    unless overlaps are assigned. The §7.2 per-PA table inherits this.
 5. Terrain illumination has not been excluded as a driver of the candidate
-   patches, which favour rough ground in hill reserves. Testing it needs a DEM.
+   patches, which favour rough ground in hill reserves. The test is designed and
+   its arithmetic validated (§7.3); it awaits the terrain export. On mechanism it
+   is already unlikely — both composites use the same calendar window, so the
+   sun sits in nearly the same place in each and cos(i) largely cancels in the
+   difference.
 
 ---
 
@@ -485,7 +568,9 @@ Recorded because each was invisible until specifically tested for.
 4. **Check candidate patches** against high-resolution imagery before any is
    described as land-use change. Neither §7.2 nor §7.3 can do this; it needs eyes
    on imagery this pipeline does not carry.
-5. **Consider a time series.** The central limitation is two dates. An annual
-   NDVI series across the same window would separate trend from the inter-annual
-   variability that dominates here, and is cheap in GEE. No amount of care with
-   the two dates we have will substitute for it.
+5. **Run `gee/03_ndvi_timeseries.js`** and download all four outputs, then
+   `R/11_ndvi_timeseries.R`. See §7.4 — this is written and tested, and it is
+   the only thing in the pipeline that can tell a trend from one wet year
+   against one dry one. It will not produce an absolute trend, for the reason
+   §7.4 sets out; what it can produce is the candidate-versus-background
+   contrast, which is the number that would move the §7.2 conclusion.

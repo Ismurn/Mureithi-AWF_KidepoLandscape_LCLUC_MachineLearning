@@ -272,3 +272,51 @@ cos.illum <- function(slope.deg, aspect.deg, zenith.deg, azimuth.deg) {
   z <- deg2rad(zenith.deg); a <- deg2rad(azimuth.deg)
   cos(z) * cos(s) + sin(z) * sin(s) * cos(a - o)
 }
+
+
+#  PHASE 3.10 - LINEAR TREND IN CLOSED FORM
+#
+#  Used by 11_ndvi_timeseries.R, which needs the slope of an annual series both
+#  for ~200,000 sampled pixels and for every cell of an 9-band raster. Fitting
+#  lm() that many times is not an option, and neither is trusting hand-expanded
+#  algebra that nothing checks - so the closed forms live here and
+#  scripts/R/tests/test_trend_estimators.R asserts them equal to lm().
+
+#' 3.10.1 OLS slope weights for a FIXED set of x values.
+#'
+#' The key fact this exploits: for a fixed x, the OLS slope is a weighted SUM of
+#' the y values, with weights that do not depend on y at all. So the slope of a
+#' raster stack is one linear combination of its bands - a handful of passes
+#' rather than a regression per cell.
+#'
+#' It also means the slope operator is LINEAR, which is what lets a depth or
+#' fire adjustment be applied to the slopes directly:
+#'     slope(y - b*z)  ==  slope(y) - b*slope(z)
+#' That identity is relied on in script 11 Phase 6 and is tested rather than
+#' assumed.
+ols.slope.weights <- function(x) {
+  xd <- x - mean(x)
+  xd / sum(xd^2)
+}
+
+#' 3.10.2 Slope of y on x. Equal to coef(lm(y ~ x))[2].
+ols.slope <- function(x, y) sum(ols.slope.weights(x) * y)
+
+#' 3.10.3 R-squared of that straight line. Equal to summary(lm(y ~ x))$r.squared.
+#'
+#' This is the second half of the question script 11 asks of a pixel. A steep
+#' slope says a pixel ended higher than it started; a high R2 says it got there
+#' STEADILY. Vegetation thickening gives both. A pixel swinging with the rains
+#' that happens to be caught low in the first year and high in the last gives
+#' the first without the second, and telling those apart is the whole point of
+#' having a series rather than two dates.
+#'
+#' Returns NA for a flat series, where no line explains anything and the ratio
+#' would be 0/0.
+ols.r2 <- function(x, y) {
+  xd  <- x - mean(x)
+  sst <- sum((y - mean(y))^2)
+  if (sst <= 0) return(NA_real_)
+  b <- sum(xd * y) / sum(xd^2)
+  min(1, (b^2 * sum(xd^2)) / sst)
+}
