@@ -224,7 +224,11 @@ function meanObsDoy(windowName, year) {
 
   var stamped = col.map(function (img) {
     var doy = ee.Date(img.get('system:time_start')).getRelative('day', 'year').add(1);
-    return img.select('RED').multiply(0).add(ee.Number(doy)).rename('obs_doy');
+    return img.select('RED')
+      .multiply(0)
+      .add(ee.Number(doy))
+      .rename('obs_doy')
+      .toFloat();
   });
 
   return stamped.mean().rename('obs_doy_' + year);
