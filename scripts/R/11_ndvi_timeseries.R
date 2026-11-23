@@ -179,38 +179,159 @@ say("    All three stacks pass. Encoding confirmed.")
 #  Printed together on purpose. The NDVI column cannot be read honestly without
 #  the two columns next to it.
 
-annual <- tibble(
-  year       = ts.years,
-  mean.ndvi  = as.numeric(terra::global(ndvi.m,  "mean", na.rm = TRUE)[, 1]) /
-                 comp.scale.int,
-  mean.obs   = as.numeric(terra::global(obs.m,   "mean", na.rm = TRUE)[, 1]),
-  burnt.frac = as.numeric(terra::global(burnt.m, "mean", na.rm = TRUE)[, 1])
-) %>%
-  mutate(in.panel    = year %in% ts.panel,
-         provisional = year %in% ts.provisional)
+#  THE SAMPLE COMES FIRST, and it carries ALL eleven years rather than just the
+#  panel, because the annual series below needs the thin years in order to show
+#  why they cannot be used.
+#
+#  Everything tabular in this script is computed from this one sample. At
+#  400,000 pixels an annual mean is pinned to about +/-0.0001 NDVI, far finer
+#  than any difference being discussed, and it costs one pass over the stacks
+#  instead of the several that repeated terra::global() calls over 33 bands of
+#  32 million cells would take. The full rasters are touched again only in
+#  Phase 6, where a per-pixel map is genuinely the output.
+#
+#  na.rm = FALSE is deliberate. Dropping rows with any NA would silently impose
+#  the intersection of all eleven years' footprints, which is exactly the
+#  composition effect this phase exists to measure.
 
-cat("\n[1] THE ANNUAL SERIES\n\n")
+f.cand <- file.path(path.out.cls, "change_strong_clusterfree.tif")
+if (!file.exists(f.cand)) stop("Candidate raster missing — run 03c_k_sensitivity.R first.")
+
+cand <- mask.to.aoi(terra::rast(f.cand))
+names(cand) <- "candidate"
+
+pa.r <- terra::rasterize(aoi.parts.v, cand, field = "pa.label")
+names(pa.r) <- "pa"
+
+px.km2 <- prod(terra::res(cand)) / 1e6
+cand.km2.total <- terra::global(cand, "sum", na.rm = TRUE)[1, 1] * px.km2
+
+all.r <- c(cand, pa.r, ndvi.m, obs.m, burnt.m)
+names(all.r) <- c("candidate", "pa",
+                  paste0("ndvi.",  ts.years),
+                  paste0("obs.",   ts.years),
+                  paste0("burnt.", ts.years))
+
+wide <- terra::spatSample(all.r, n.samp, method = "random",
+                          na.rm = FALSE, warn = FALSE) %>%
+  as_tibble() %>%
+  filter(!is.na(candidate)) %>%        # inside the PA union
+  mutate(pixel = row_number())
+
+long.all <- wide %>%
+  pivot_longer(matches("^(ndvi|obs|burnt)\\.\\d{4}$"),
+               names_to = c(".value", "year"),
+               names_pattern = "^(ndvi|obs|burnt)\\.(\\d{4})$") %>%
+  mutate(year = as.integer(year),
+         ndvi = ndvi / comp.scale.int,
+         supported = !is.na(ndvi) & !is.na(obs) & obs >= comp.min.obs)
+
+say(glue("
+[1] SAMPLE
+    pixels inside the PA union : {format(nrow(wide), big.mark = ',')}
+    pixel-years, all {length(ts.years)} years  : {format(nrow(long.all), big.mark = ',')}
+    candidate pixels           : {format(sum(wide$candidate, na.rm = TRUE), big.mark = ',')} ({round(100 * mean(wide$candidate, na.rm = TRUE), 2)}%)
+    candidate area on the map  : {round(cand.km2.total, 1)} km2"))
+
+
+# =============================================================================
+#  PHASE 1b — THE ANNUAL SERIES, ON TWO DIFFERENT SETS OF PIXELS
+# =============================================================================
+#  This phase exists because of something the GEE cross-check table showed
+#  before any of it was run: 2020 came back at mean NDVI 0.491 and 2026 at
+#  0.528, against roughly 0.38 for every other year. Both are LOW-COVERAGE
+#  years — 4.77 and 7.90 mean clear looks, and only 75.9% of the AOI
+#  adequately covered in 2020.
+#
+#  That is not a greener landscape, it is a DIFFERENT landscape. A year's mean
+#  taken over whatever pixels happened to be clear is a mean over a different
+#  set of pixels each year, and in a year when a quarter of the AOI is missing
+#  the surviving quarter is not a random quarter — script 08 already found that
+#  clear-sky selection favours particular ground. Comparing such means across
+#  years measures the weather's effect on WHICH PIXELS WERE SEEN as much as on
+#  the vegetation.
+#
+#  So both versions are computed and printed side by side:
+#
+#    VARYING  each year averaged over its own supported pixels — what the GEE
+#             table reports, and what any naive series would give
+#    FIXED    every year averaged over the SAME pixels, those supported in all
+#             panel years. Composition is then constant by construction and the
+#             years are comparable.
+#
+#  The FIXED series is the one every later phase uses.
+
+fixed.pixels <- long.all %>%
+  filter(year %in% ts.panel) %>%
+  group_by(pixel) %>%
+  summarise(all.ok = all(supported), .groups = "drop") %>%
+  filter(all.ok) %>%
+  pull(pixel)
+
+annual.varying <- long.all %>%
+  filter(supported) %>%
+  group_by(year) %>%
+  summarise(n = n(), mean.ndvi = mean(ndvi), mean.obs = mean(obs),
+            burnt.frac = mean(burnt, na.rm = TRUE), .groups = "drop")
+
+annual.fixed <- long.all %>%
+  filter(pixel %in% fixed.pixels) %>%
+  group_by(year) %>%
+  summarise(n = sum(!is.na(ndvi)), mean.ndvi = mean(ndvi, na.rm = TRUE),
+            mean.obs = mean(obs, na.rm = TRUE),
+            burnt.frac = mean(burnt, na.rm = TRUE), .groups = "drop")
+
+annual <- annual.fixed %>%
+  select(year, mean.ndvi, mean.obs, burnt.frac) %>%
+  left_join(annual.varying %>% select(year, ndvi.varying = mean.ndvi,
+                                      n.varying = n), by = "year") %>%
+  mutate(in.panel    = year %in% ts.panel,
+         provisional = year %in% ts.provisional,
+         composition = ndvi.varying - mean.ndvi)
+
+cat("\n[1b] THE ANNUAL SERIES — FIXED PIXELS vs VARYING\n\n")
 annual %>%
-  mutate(mean.ndvi = round(mean.ndvi, 4),
-         mean.obs = round(mean.obs, 2),
-         burnt.frac = round(burnt.frac, 3)) %>%
+  transmute(year,
+            ndvi.fixed = round(mean.ndvi, 4),
+            ndvi.varying = round(ndvi.varying, 4),
+            composition = round(composition, 4),
+            mean.obs = round(mean.obs, 2),
+            burnt.frac = round(burnt.frac, 3),
+            in.panel, provisional) %>%
   as.data.frame() %>% print(row.names = FALSE)
+
+say(glue("
+    pixels held fixed across {min(ts.panel)}-{max(ts.panel)} : {format(length(fixed.pixels), big.mark = ',')} of {format(nrow(wide), big.mark = ',')} ({round(100 * length(fixed.pixels) / nrow(wide), 1)}%)
+    largest composition effect       : {sprintf('%+.4f', annual$composition[which.max(abs(annual$composition))])} NDVI, in {annual$year[which.max(abs(annual$composition))]}
+
+    The `composition` column is what you get for free by averaging over
+    whichever pixels were visible. Where it is large, the varying series is
+    telling you about cloud cover, not about vegetation. Every phase below
+    uses the fixed series."))
 
 ## The cross-check against the GEE table, if it was downloaded. Three code
 ## paths agreeing is the only reason to believe any of them.
+#  The comparison is against the VARYING series, not the fixed one. GEE
+#  averaged over whatever pixels it could see in each year, so that is the
+#  quantity to hold it to; comparing it against the fixed series would show a
+#  large difference that is this script's own doing.
 f.csv <- file.path(path.gee.out, "kidepo_ndvi_annual_aoi.csv")
 if (file.exists(f.csv)) {
   gee.tbl <- readr::read_csv(f.csv, show_col_types = FALSE)
   cmp.csv <- annual %>%
-    select(year, r.ndvi = mean.ndvi, r.obs = mean.obs, r.burnt = burnt.frac) %>%
+    select(year, r.ndvi.varying = ndvi.varying, r.ndvi.fixed = mean.ndvi,
+           r.obs = mean.obs, r.burnt = burnt.frac) %>%
     left_join(gee.tbl %>% select(year, gee.ndvi = mean_ndvi,
                                  gee.obs = mean_obs, gee.burnt = burnt_frac),
               by = "year") %>%
-    mutate(d.ndvi = r.ndvi - gee.ndvi)
+    mutate(d.ndvi = r.ndvi.varying - gee.ndvi,
+           d.burnt = r.burnt - gee.burnt)
   say(glue("
-    Cross-check against the GEE table (it was reduced at 240 m against R's
-    30 m, so small differences are expected and large ones are not):
-      largest NDVI discrepancy : {sprintf('%+.4f', cmp.csv$d.ndvi[which.max(abs(cmp.csv$d.ndvi))])}"))
+    Cross-check against the GEE table. GEE reduced at 240 m over the BUFFERED
+    region while this is 30 m over the PA union, so small differences are
+    expected; a large one would mean the download or the band order is wrong.
+      largest NDVI discrepancy  : {sprintf('%+.4f', cmp.csv$d.ndvi[which.max(abs(cmp.csv$d.ndvi))])} (in {cmp.csv$year[which.max(abs(cmp.csv$d.ndvi))]})
+      largest burnt discrepancy : {sprintf('%+.4f', cmp.csv$d.burnt[which.max(abs(cmp.csv$d.burnt))])} (in {cmp.csv$year[which.max(abs(cmp.csv$d.burnt))]})"))
   readr::write_csv(cmp.csv, file.path(path.out.ts, "annual_gee_vs_r.csv"))
 } else {
   say("    No GEE cross-check table downloaded — optional, but it is the only
@@ -288,52 +409,29 @@ say(glue("
 
 
 # =============================================================================
-#  PHASE 3 — THE PANEL SAMPLE
+#  PHASE 3 — THE BALANCED PANEL
 # =============================================================================
-#  One sample, long format, pixel by year. Everything from here on is computed
-#  on it so that the numbers are mutually comparable.
+#  `long` is the working table for every phase from here: the panel years only,
+#  restricted to the pixels held fixed in Phase 1b, so each pixel contributes a
+#  complete and adequately supported series. A pixel appearing in some years and
+#  not others would put a trend into a trend estimate all by itself.
 
-f.cand <- file.path(path.out.cls, "change_strong_clusterfree.tif")
-if (!file.exists(f.cand)) stop("Candidate raster missing — run 03c_k_sensitivity.R first.")
+long <- long.all %>%
+  filter(year %in% ts.panel, pixel %in% fixed.pixels)
 
-cand <- mask.to.aoi(terra::rast(f.cand))
-names(cand) <- "candidate"
-
-pa.r <- terra::rasterize(aoi.parts.v, cand, field = "pa.label")
-names(pa.r) <- "pa"
-
-px.km2 <- prod(terra::res(cand)) / 1e6
-cand.km2.total <- terra::global(cand, "sum", na.rm = TRUE)[1, 1] * px.km2
-
-keep <- paste0(rep(c("ndvi.", "obs.", "burnt."), each = length(ts.panel)),
-               rep(ts.panel, 3))
-
-wide <- terra::spatSample(
-  c(cand, pa.r, ndvi.m[[paste0("ndvi.",  ts.panel)]],
-    obs.m[[paste0("obs.",   ts.panel)]],
-    burnt.m[[paste0("burnt.", ts.panel)]]),
-  n.samp, method = "random", na.rm = TRUE, warn = FALSE) %>%
-  as_tibble() %>%
-  mutate(pixel = row_number())
-
-long <- wide %>%
-  pivot_longer(all_of(keep),
-               names_to = c(".value", "year"),
-               names_pattern = "^(ndvi|obs|burnt)\\.(\\d{4})$") %>%
-  mutate(year = as.integer(year),
-         ndvi = ndvi / comp.scale.int)
+n.cand.px <- long %>% filter(year == min(ts.panel)) %>% pull(candidate) %>% sum()
 
 say(glue("
-[3] PANEL SAMPLE
-    pixels                 : {format(nrow(wide), big.mark = ',')}
+[3] BALANCED PANEL
+    pixels                 : {format(length(fixed.pixels), big.mark = ',')}
     years                  : {min(ts.panel)}-{max(ts.panel)} ({length(ts.panel)})
     pixel-years            : {format(nrow(long), big.mark = ',')}
-    candidate pixels       : {format(sum(wide$candidate), big.mark = ',')} ({round(100 * mean(wide$candidate), 2)}%)
-    candidate area on the map : {round(cand.km2.total, 1)} km2"))
+    candidate pixels       : {format(n.cand.px, big.mark = ',')} ({round(100 * n.cand.px / length(fixed.pixels), 2)}%)"))
 
-if (sum(wide$candidate) < 500) {
-  stop(glue("Only {sum(wide$candidate)} candidate pixels in the sample — too few. ",
-            "Raise n.samp above {n.samp}."))
+if (n.cand.px < 500) {
+  stop(glue("Only {n.cand.px} candidate pixels survive into the balanced panel ",
+            "— too few to compare against background. Raise n.samp above ",
+            "{n.samp}, or widen ts.panel if whole years are being lost."))
 }
 
 
@@ -472,6 +570,136 @@ say(glue("
 
 
 # =============================================================================
+#  PHASE 5b — HOW MUCH OF ALL THAT IS THE SELECTION RULE ITSELF?
+# =============================================================================
+#  This phase exists because Phase 5 produced an impossible-looking number: an
+#  excess 2019 dip of -0.067, which is THREE TIMES the headline step it is
+#  supposed to help explain. An effect several times larger than the thing it
+#  explains is usually a sign that the estimator is measuring the selection
+#  rather than the world, and that is exactly what is happening.
+#
+#  The candidates were DEFINED as pixels with |dNDVI| > 0.15 between 2019 and
+#  2024. Selecting pixels on a difference between two years guarantees two
+#  things about them, whether or not anything real is going on:
+#
+#    they will look anomalously LOW in 2019 and HIGH in 2024, because that is
+#    the criterion they were chosen by — ordinary regression to the mean
+#
+#    they will show a POSITIVE fitted trend across any window containing those
+#    two years, because the fit is partly a restatement of the difference it
+#    was selected on
+#
+#  So Phases 4 and 5 are both contaminated, and no amount of fixed effects
+#  repairs it: the bias is in the sample, not the model.
+#
+#  TWO CORRECTIONS, both reported.
+#
+#  LEAVE-OUT   refit the trend with 2019 and 2024 DROPPED. The selection no
+#              longer mechanically determines the fit. Not perfectly clean —
+#              a pixel unusually brown in 2019 may be brown in 2018 too — but
+#              it removes the dominant term.
+#
+#  PLACEBO     apply the SAME rule to other year pairs five years apart, and
+#              see whether those placebo "candidates" behave the same way. If
+#              they show the same excess dip and the same steeper trend, the
+#              pattern belongs to the rule and not to the real patches. This is
+#              the more decisive of the two.
+
+nd.wide <- long %>%
+  select(pixel, pa, candidate, year, ndvi) %>%
+  pivot_wider(names_from = year, values_from = ndvi, names_prefix = "y")
+
+mag.threshold <- 0.15   # as in 03c, which defined the candidate set
+
+#' Behaviour of a set selected on the (from -> to) difference.
+#' Returns the leave-out trend gap and the excess dip at `from`, each measured
+#' against the pixels the same rule did NOT select.
+selection.probe <- function(from, to) {
+
+  yf <- paste0("y", from); yt <- paste0("y", to)
+  flagged <- (nd.wide[[yt]] - nd.wide[[yf]]) > mag.threshold
+
+  lo.years <- setdiff(ts.panel, c(from, to))
+  lo.cols  <- paste0("y", lo.years)
+  m <- as.matrix(nd.wide[, lo.cols])
+
+  w  <- ols.slope.weights(lo.years)
+  sl <- as.numeric(m %*% w)          # exact OLS slope, one matrix product
+
+  ## Dip at `from`, against its own neighbouring years, excluding `to`.
+  nb <- setdiff(intersect(c(from - 1, from + 1), ts.panel), to)
+  dip <- if (length(nb) > 0) {
+    nd.wide[[yf]] - rowMeans(as.matrix(nd.wide[, paste0("y", nb)]))
+  } else rep(NA_real_, nrow(nd.wide))
+
+  d <- tibble(flagged = flagged, sl = sl, dip = dip, pa = nd.wide$pa) %>%
+    drop_na(sl)
+
+  fit <- lm(sl ~ flagged + factor(pa), data = d)
+
+  tibble(
+    from = from, to = to,
+    n.flagged = sum(d$flagged),
+    pct.flagged = 100 * mean(d$flagged),
+    slope.flagged = median(d$sl[d$flagged]),
+    slope.rest = median(d$sl[!d$flagged]),
+    slope.gap.pa.adj = coef(fit)[["flaggedTRUE"]],
+    slope.gap.se = summary(fit)$coefficients["flaggedTRUE", "Std. Error"],
+    excess.dip = median(d$dip[d$flagged], na.rm = TRUE) -
+                 median(d$dip[!d$flagged], na.rm = TRUE)
+  )
+}
+
+## The real pair, then every other pair the same distance apart. The earliest
+## pair gets a one-sided dip test, since its `from` year has no panel year
+## before it — weaker, but a third placebo is worth more than a tidy design
+## with only two.
+probe.pairs <- tibble(from = ts.panel, to = ts.panel + gap.yrs) %>%
+  filter(to <= max(ts.panel))
+
+probes <- purrr::pmap_dfr(list(probe.pairs$from, probe.pairs$to),
+                          selection.probe) %>%
+  mutate(is.real = (from == yr.a & to == yr.b))
+
+cat("\n[5b] THE SAME RULE APPLIED TO OTHER YEAR PAIRS\n\n")
+probes %>%
+  transmute(pair = paste0(from, "->", to), is.real,
+            pct.flagged = round(pct.flagged, 2),
+            leaveout.slope.gap = round(slope.gap.pa.adj, 6),
+            se = round(slope.gap.se, 6),
+            excess.dip = round(excess.dip, 4)) %>%
+  as.data.frame() %>% print(row.names = FALSE)
+
+real.probe <- probes %>% filter(is.real)
+fake.probe <- probes %>% filter(!is.real)
+
+did.lo    <- real.probe$slope.gap.pa.adj
+did.lo.se <- real.probe$slope.gap.se
+dip.lo    <- real.probe$excess.dip
+
+say(glue("
+    REAL pair {yr.a}->{yr.b}
+      leave-out trend gap    : {sprintf('%+.6f', did.lo)} +/- {sprintf('%.6f', did.lo.se)} per year
+      against the in-sample  : {sprintf('%+.6f', did.adj)} per year from Phase 4
+      excess dip at {yr.a}      : {sprintf('%+.5f', dip.lo)}
+
+    PLACEBO pairs ({nrow(fake.probe)} of them), which select on years the real candidates
+    were not chosen by:
+      leave-out trend gap, mean : {sprintf('%+.6f', mean(fake.probe$slope.gap.pa.adj))} (range {sprintf('%+.6f', min(fake.probe$slope.gap.pa.adj))} to {sprintf('%+.6f', max(fake.probe$slope.gap.pa.adj))})
+      excess dip, mean          : {sprintf('%+.5f', mean(fake.probe$excess.dip))} (range {sprintf('%+.5f', min(fake.probe$excess.dip))} to {sprintf('%+.5f', max(fake.probe$excess.dip))})
+
+    HOW TO READ THIS. The placebo rows are what the selection rule produces
+    from a landscape where nothing has been singled out — they are the null.
+    If the real pair's numbers sit inside the placebo range, then everything
+    Phases 4 and 5 found about the candidates is an artefact of how they were
+    chosen, and the series says nothing about them. If the real pair stands
+    outside that range, the excess is genuine."))
+
+sel.explains.slope <- did.lo <= max(fake.probe$slope.gap.pa.adj)
+sel.explains.dip   <- dip.lo >= min(fake.probe$excess.dip)
+
+
+# =============================================================================
 #  PHASE 6 — THE TREND MAP, DEPTH- AND FIRE-ADJUSTED
 # =============================================================================
 #  A per-pixel slope over the balanced panel, for the report.
@@ -482,15 +710,28 @@ say(glue("
 #  of any stack is one linear combination of its bands — a handful of passes
 #  instead of 32 million regressions.
 #
-#  Then, since slope is linear, the slope of NDVI net of depth and fire is
+#  NO DEPTH CORRECTION IS APPLIED TO THIS MAP, and the reason is a result in
+#  itself rather than an omission.
 #
-#      slope.adj = slope(ndvi) - b.obs * slope(obs) - b.burnt * slope(burnt)
+#  The plan was slope.adj = slope(ndvi) - b.obs*slope(obs) - b.burnt*slope(burnt),
+#  with b.obs and b.burnt estimated within year across pixels so the common time
+#  trend could not leak into them. Estimated that way, b.obs came out NEGATIVE:
+#  about -0.0005 NDVI per extra clear look, against +0.0033 from the differenced
+#  regression in script 08 that identified the artefact in the first place.
 #
-#  where b.obs and b.burnt come from the panel below. Those two coefficients are
-#  estimated WITHIN YEAR across pixels, with year fixed effects, so the common
-#  time trend cannot leak into them. Per script 08's warning that within-date
-#  slopes also absorb terrain and ecology, they are an UPPER BOUND on the
-#  artefact, which makes the adjusted map a conservative one.
+#  Opposite signs mean these two numbers are not measuring the same thing, and
+#  script 08 said in advance which one is which: a within-date, cross-pixel
+#  slope measures the LANDSCAPE — pixels that get seen more often are drier,
+#  flatter, less cloudy ground — while differencing the same pixel across dates
+#  measures the artefact. Subtracting a wrong-signed coefficient would not
+#  correct this map, it would inflate it, which is exactly what the first run
+#  did: it moved the mean slope from +0.0059 to +0.0064 per year.
+#
+#  And there is no better coefficient available. The within-PIXEL-over-time
+#  estimator, which would be the right analogue of script 08, is collinear with
+#  the year term by construction here — that is the whole thesis of Phase 1.
+#  So the raw slope is the only honest map, and the coefficients below are
+#  printed as a diagnostic, not used.
 
 ## Fitted on a subsample of pixel-years. lm() builds a dense model matrix, and
 ## the full panel at 1.8 million rows by a dozen columns would cost several
@@ -503,9 +744,17 @@ b.obs   <- coef(fit.wy)[["obs"]]
 b.burnt <- coef(fit.wy)[["burnt"]]
 
 say(glue("
-[6] WITHIN-YEAR COEFFICIENTS (upper bounds on the two artefacts)
+[6] WITHIN-YEAR COEFFICIENTS — DIAGNOSTIC ONLY, NOT APPLIED
     NDVI per extra clear look  : {sprintf('%+.6f', b.obs)}
-    NDVI if burnt this season  : {sprintf('%+.6f', b.burnt)}"))
+    NDVI if burnt this season  : {sprintf('%+.6f', b.burnt)}
+
+    Script 08's differenced estimate of the depth effect is about +0.0033 per
+    look. This one has the OPPOSITE SIGN, which is the signature script 08
+    warned of: across pixels within a year, the ones seen more often are
+    simply different ground. Using it to correct the trend map would inflate
+    the trend rather than correct it, so the map below is the RAW slope and
+    carries no depth correction. The fire coefficient is left unapplied for
+    the same reason — it is identified the same way."))
 
 w <- ols.slope.weights(ts.panel)
 
@@ -521,29 +770,28 @@ ok <- Reduce(`&`, lapply(ts.panel, function(y)
   !is.na(ndvi.m[[paste0("ndvi.", y)]]) &
    obs.m[[paste0("obs.", y)]] >= comp.min.obs))
 
-slope.ndvi  <- lin.comb(ndvi.m,  "ndvi.") / comp.scale.int
-slope.obs   <- lin.comb(obs.m,   "obs.")
-slope.burnt <- lin.comb(burnt.m, "burnt.")
-
-slope.adj <- slope.ndvi - b.obs * slope.obs - b.burnt * slope.burnt
-
+slope.ndvi <- lin.comb(ndvi.m, "ndvi.") / comp.scale.int
 slope.ndvi <- terra::mask(slope.ndvi, ok, maskvalues = c(0, NA))
-slope.adj  <- terra::mask(slope.adj,  ok, maskvalues = c(0, NA))
 names(slope.ndvi) <- "slope.raw"
-names(slope.adj)  <- "slope.adj"
 
 pct.balanced <- 100 * terra::global(ok, "mean", na.rm = TRUE)[1, 1]
+mean.slope   <- terra::global(slope.ndvi, "mean", na.rm = TRUE)[1, 1]
 
 say(glue("
     pixels in the balanced panel : {round(pct.balanced, 1)}% of the AOI
-    mean raw slope               : {sprintf('%+.6f', terra::global(slope.ndvi, 'mean', na.rm = TRUE)[1,1])} NDVI per year
-    mean adjusted slope          : {sprintf('%+.6f', terra::global(slope.adj, 'mean', na.rm = TRUE)[1,1])} NDVI per year
+    mean slope over those pixels : {sprintf('%+.6f', mean.slope)} NDVI per year
+      implied over {gap.yrs} years       : {sprintf('%+.4f', mean.slope * gap.yrs)}
 
-    The gap between those two is the share of the apparent greening trend that
-    a denser archive and a quieter fire year can account for. Both are reported
-    because the adjusted one is conservative, not because either is the truth."))
+    Requiring every one of the {length(ts.panel)} years to be adequately supported keeps only
+    {round(pct.balanced, 1)}% of the AOI, so this map is not a map of the landscape — it is a
+    map of the part of it that is reliably visible every year, which is flatter
+    and less cloudy than the whole. Read the pattern, not the coverage.
 
-terra::writeRaster(c(slope.ndvi, slope.adj),
+    And read the LEVEL with the Phase 1 warning attached: observation depth
+    roughly triples across this record, so a positive mean slope here is partly
+    the archive growing and cannot be separated from real greening."))
+
+terra::writeRaster(slope.ndvi,
                    file.path(path.out.ts, "ndvi_trend_slope.tif"),
                    overwrite = TRUE, datatype = "FLT4S")
 
@@ -556,63 +804,67 @@ cat("\n================================================================\n")
 cat(" VERDICT — what the series adds to the two-date result\n")
 cat("================================================================\n\n")
 
-step.ordinary  <- abs(step.ab) <= sd(pairs.same.gap$step)
-cand.steeper   <- did.adj > 2 * did.se
-cand.monotone  <- traj$median.r2[traj$candidate == 1] >
-                  traj$median.r2[traj$candidate == 0] + 0.05
-dip.matters    <- dip.excess < 0 && abs(dip.excess) > 0.2 * abs(step.ab)
+step.ordinary <- abs(step.ab) <= sd(yoy)
 
-cat(sprintf("  The %d->%d step is %+.4f, against an sd of %.4f across\n",
-            yr.a, yr.b, step.ab, sd(pairs.same.gap$step)))
-cat(sprintf("  comparable %d-year steps in this record.\n\n", gap.yrs))
+cat(sprintf("  The %d->%d step on a FIXED set of pixels is %+.4f, against a\n",
+            yr.a, yr.b, step.ab))
+cat(sprintf("  year-to-year sd of %.4f in this record. %d of %d comparable\n",
+            sd(yoy), sum(abs(pairs.same.gap$step) >= abs(step.ab)),
+            nrow(pairs.same.gap)))
+cat(sprintf("  %d-year steps are at least as large.\n\n", gap.yrs))
 
-cat(sprintf("  Candidates trend %+.6f NDVI/yr faster than background (PA-adjusted,\n",
-            did.adj))
-cat(sprintf("  SE %.6f), which is %+.5f over %d years.\n\n",
-            did.se, did.adj * gap.yrs, gap.yrs))
+cat("  ON THE CANDIDATES, the in-sample contrasts and the selection-free ones\n")
+cat("  disagree, and only the second kind can be believed:\n\n")
+cat(sprintf("    trend gap, window includes %d and %d : %+.6f /yr\n",
+            yr.a, yr.b, did.adj))
+cat(sprintf("    trend gap, those two years dropped    : %+.6f /yr (SE %.6f)\n",
+            did.lo, did.lo.se))
+cat(sprintf("    same, from %d placebo year pairs       : %+.6f to %+.6f /yr\n",
+            nrow(fake.probe), min(fake.probe$slope.gap.pa.adj),
+            max(fake.probe$slope.gap.pa.adj)))
+cat(sprintf("    excess %d dip                        : %+.5f\n", yr.a, dip.lo))
+cat(sprintf("    same, from the placebo pairs           : %+.5f to %+.5f\n\n",
+            min(fake.probe$excess.dip), max(fake.probe$excess.dip)))
 
-cat(sprintf("  Candidate linear-fit R2 %.3f vs background %.3f.\n",
-            traj$median.r2[traj$candidate == 1],
-            traj$median.r2[traj$candidate == 0]))
-cat(sprintf("  Excess %d dip for candidates: %+.5f.\n\n", yr.a, dip.excess))
-
-if (cand.steeper && cand.monotone) {
-  cat("  THE CANDIDATES ARE ON A REAL TRAJECTORY.\n\n")
-  cat("  They trend faster than their background and a straight line describes\n")
-  cat("  them better, which is what thickening, regrowth or land-use change\n")
-  cat("  looks like and is not what rainfall looks like. The common confounds\n")
-  cat("  cancel in that contrast. What this still cannot do is say WHICH of\n")
-  cat("  those three it is — that needs high-resolution imagery.\n")
-} else if (cand.steeper && !cand.monotone) {
-  cat("  STEEPER, BUT NOT STEADIER.\n\n")
-  cat("  The candidates do move faster than their background, so something\n")
-  cat("  distinguishes them. But a straight line describes them no better than\n")
-  cat("  it describes anywhere else, which is the signature of pixels that\n")
-  cat("  swing with the rains and happened to be caught low in one year and\n")
-  cat("  high in the other. Treat the candidate area as an upper bound and\n")
-  cat("  quote the headline as a two-year difference, not a rate.\n")
+if (sel.explains.slope && sel.explains.dip) {
+  cat("  THE SERIES DOES NOT SINGLE THE CANDIDATES OUT.\n\n")
+  cat("  Both things that looked like evidence for them — a steeper trend and a\n")
+  cat("  2019 dip — are reproduced by applying the same threshold to year pairs\n")
+  cat("  the candidates were not selected by. They are properties of the\n")
+  cat("  SELECTION RULE, not of the ground: choose pixels on a difference\n")
+  cat("  between two years and they will always look low in the first, high in\n")
+  cat("  the second, and rising in between.\n\n")
+  cat("  The candidate area therefore still rests on the two-date comparison\n")
+  cat("  alone, and the series adds no independent support for it. It does add\n")
+  cat("  something about the landscape: the step is ordinary against year-to-\n")
+  cat("  year variation, so the figure belongs in a report as a difference\n")
+  cat("  between two particular years with that spread beside it.\n")
+} else if (!sel.explains.slope && !sel.explains.dip) {
+  cat("  THE CANDIDATES SURVIVE THE PLACEBO.\n\n")
+  cat("  Their trend is steeper than the placebo selections produce, and their\n")
+  cat("  dip is deeper, so neither is explained by the selection rule. That is\n")
+  cat("  real evidence of a different trajectory, and with the common depth and\n")
+  cat("  rainfall trends cancelling in the contrast it is the strongest result\n")
+  cat("  this pipeline has produced. It still cannot say whether the cause is\n")
+  cat("  thickening, regrowth or land-use change.\n")
+} else if (!sel.explains.slope) {
+  cat("  A STEEPER TREND SURVIVES, THE DIP DOES NOT.\n\n")
+  cat("  The candidates trend faster than the placebo selections manage, so\n")
+  cat("  something distinguishes them. The 2019 dip, though, is within what the\n")
+  cat("  selection rule manufactures on its own and should not be reported as a\n")
+  cat("  finding about 2019.\n")
 } else {
-  cat("  THE CANDIDATES ARE NOT DISTINGUISHABLE OVER THE SERIES.\n\n")
-  cat("  Their trend is not separable from the background's once protected\n")
-  cat("  area is held constant. The two-date comparison picked out pixels that\n")
-  cat("  differed between 2019 and 2024 specifically, and over nine years they\n")
-  cat("  do not behave differently from anywhere else. That points at\n")
-  cat("  inter-annual variability rather than land-cover change, and the\n")
-  cat("  candidate area should not be reported as change without independent\n")
-  cat("  evidence.\n")
-}
-
-if (dip.matters) {
-  cat(sprintf("\n  NOTE: %d was specifically depressed in the candidate pixels, by\n", yr.a))
-  cat(sprintf("  %+.5f beyond the background's own dip — %.0f%% of the headline step.\n",
-              dip.excess, 100 * abs(dip.excess) / abs(step.ab)))
-  cat("  Part of what was measured as change is that anomaly.\n")
+  cat("  A DEEPER DIP SURVIVES, THE TREND DOES NOT.\n\n")
+  cat("  The candidates were specifically depressed in 2019 beyond what the\n")
+  cat("  selection rule explains, while their trend is not distinguishable from\n")
+  cat("  what that rule manufactures. That points at a 2019 anomaly in those\n")
+  cat("  pixels rather than a trajectory, and the candidate area is an upper\n")
+  cat("  bound.\n")
 }
 
 if (step.ordinary) {
-  cat("\n  AND: the headline step is within one sd of comparable steps in this\n")
-  cat("  record, so it should be quoted as a difference between two particular\n")
-  cat("  years with that spread attached, never as an annual rate.\n")
+  cat("\n  AND: the headline step is within one year-to-year sd, so it must never\n")
+  cat("  be quoted as an annual rate.\n")
 }
 
 
@@ -624,6 +876,12 @@ hl <- annual %>% filter(year %in% c(yr.a, yr.b))
 
 p.series <- annual %>%
   ggplot(aes(year, mean.ndvi)) +
+  ## The varying-footprint series, for contrast: where it departs from the
+  ## fixed one it is reporting cloud cover rather than vegetation.
+  geom_line(aes(y = ndvi.varying), colour = "#d7191c", linetype = 2,
+            linewidth = 0.4) +
+  geom_point(aes(y = ndvi.varying), colour = "#d7191c", size = 1,
+             shape = 4) +
   geom_line(colour = "grey60") +
   geom_point(aes(shape = in.panel, colour = burnt.frac, size = mean.obs)) +
   ## inherit.aes = FALSE on both: the top-level aes carries size and colour
@@ -641,9 +899,11 @@ p.series <- annual %>%
                      name = "in panel") +
   scale_x_continuous(breaks = ts.years) +
   labs(title = "Mean dry-season NDVI by year",
-       subtitle = glue("Circled: the two dates the headline rests on. ",
-                       "Point size is observation depth, colour is fire — ",
-                       "both confound the apparent trend."),
+       subtitle = glue("Solid: the same {format(length(fixed.pixels), big.mark = ',')} pixels every year. ",
+                       "Red dashed: each year over whatever pixels were clear ",
+                       "— cloud cover, not vegetation.\nCircled: the two dates ",
+                       "the headline rests on. Point size is observation depth, ",
+                       "colour is fire."),
        x = NULL, y = "mean NDVI") +
   theme_minimal(base_size = 10) +
   theme(plot.background = element_rect(fill = "white", colour = NA),
@@ -687,12 +947,12 @@ p.slope <- fit.pixel %>%
   theme(plot.background = element_rect(fill = "white", colour = NA),
         axis.text.y = element_blank(), legend.position = "bottom")
 
-lim <- quantile(terra::spatSample(slope.adj, 2e5, na.rm = TRUE)[, 1],
+lim <- quantile(terra::spatSample(slope.ndvi, 2e5, na.rm = TRUE)[, 1],
                 c(0.02, 0.98), na.rm = TRUE)
 lim <- max(abs(lim))
 
 p.map <- ggplot() +
-  geom_spatraster(data = slope.adj, maxcell = 8e5) +
+  geom_spatraster(data = slope.ndvi, maxcell = 8e5) +
   scale_fill_gradient2(low = "#8c510a", mid = "#f6f6f6", high = "#01665e",
                        midpoint = 0, limits = c(-lim, lim), oob = scales::squish,
                        na.value = NA, name = "NDVI / yr") +
@@ -700,10 +960,11 @@ p.map <- ggplot() +
   annotation_scale(location = "bl", width_hint = 0.25,
                    height = unit(0.15, "cm")) +
   coord_sf(expand = FALSE) +
-  labs(title = glue("NDVI trend {min(ts.panel)}-{max(ts.panel)}, adjusted for ",
-                    "observation depth and fire"),
-       subtitle = glue("Balanced panel only ({round(pct.balanced, 1)}% of the ",
-                       "AOI). Adjustment is conservative — see Phase 6.")) +
+  labs(title = glue("NDVI trend {min(ts.panel)}-{max(ts.panel)} (uncorrected)"),
+       subtitle = glue("Balanced panel only — {round(pct.balanced, 1)}% of the AOI, ",
+                       "the part reliably visible every year.\nNo depth ",
+                       "correction is available: see Phase 6. The LEVEL is ",
+                       "partly the growing archive; read the pattern.")) +
   theme_void(base_size = 9) +
   theme(plot.title = element_text(face = "bold", size = 11),
         plot.subtitle = element_text(size = 8),
@@ -728,26 +989,41 @@ readr::write_csv(pairs.same.gap, file.path(path.out.ts, "comparable_steps.csv"))
 readr::write_csv(traj,           file.path(path.out.ts, "trajectory_summary.csv"))
 readr::write_csv(anom,           file.path(path.out.ts, "year_2019_anomaly.csv"))
 readr::write_csv(traj.series,    file.path(path.out.ts, "candidate_vs_background_series.csv"))
+readr::write_csv(probes,         file.path(path.out.ts, "selection_placebo.csv"))
 
 readr::write_csv(
   tibble(
-    quantity = c("headline.step", "sd.comparable.steps", "sd.year.on.year",
+    quantity = c("headline.step.fixed.pixels", "sd.comparable.steps",
+                 "sd.year.on.year", "largest.single.year.swing",
                  "cor.year.obs", "cor.year.burnt", "cor.obs.ndvi",
                  "median.slope.candidate", "median.slope.background",
-                 "did.raw", "did.pa.adjusted", "did.se",
+                 "did.raw.in.sample", "did.pa.adjusted.in.sample", "did.se",
+                 "did.leaveout", "did.leaveout.se",
+                 "did.placebo.min", "did.placebo.max",
                  "median.r2.candidate", "median.r2.background",
-                 "dip.candidate", "dip.background", "dip.excess",
-                 "b.obs.within.year", "b.burnt.within.year",
-                 "pct.balanced.panel", "cand.km2"),
-    value = c(step.ab, sd(pairs.same.gap$step), sd(yoy),
+                 "dip.candidate", "dip.background", "dip.excess.in.sample",
+                 "dip.excess.leaveout",
+                 "dip.placebo.min", "dip.placebo.max",
+                 "selection.explains.trend", "selection.explains.dip",
+                 "b.obs.within.year.unused", "b.burnt.within.year.unused",
+                 "pct.balanced.panel", "mean.slope.balanced.panel",
+                 "cand.km2"),
+    value = c(step.ab, sd(pairs.same.gap$step),
+              sd(yoy), yoy[which.max(abs(yoy))],
               r.year.obs, r.year.burnt, r.obs.ndvi,
               slope.cand, slope.back,
               did, did.adj, did.se,
+              did.lo, did.lo.se,
+              min(fake.probe$slope.gap.pa.adj), max(fake.probe$slope.gap.pa.adj),
               traj$median.r2[traj$candidate == 1],
               traj$median.r2[traj$candidate == 0],
               dip.cand, dip.back, dip.excess,
+              dip.lo,
+              min(fake.probe$excess.dip), max(fake.probe$excess.dip),
+              as.numeric(sel.explains.slope), as.numeric(sel.explains.dip),
               b.obs, b.burnt,
-              pct.balanced, cand.km2.total)
+              pct.balanced, mean.slope,
+              cand.km2.total)
   ),
   file.path(path.out.ts, "timeseries_headline_numbers.csv")
 )

@@ -259,8 +259,22 @@ var stack = elevation
   .addBands(aspect)
   .addBands(doy2019)
   .addBands(doy2024)
-  .clip(aoiExport)        // clip BEFORE unmask, so the sentinel reaches every
-  .unmask(NODATA)         // pixel outside the AOI — the lesson from 02
+  // Clip before unmask so the sentinel reaches pixels that are masked INSIDE
+  // the region — a pixel with no clear look that year, for instance.
+  //
+  // It does NOT make the file sentinel-filled outside the region, and the
+  // comment here used to claim it did. Earth Engine exports the bounding
+  // RECTANGLE of a non-rectangular region, fills everything outside the region
+  // itself with 0, and writes no nodata tag — so about 70% of this file is zero
+  // fill that a naive read cannot distinguish from data. That is the export's
+  // own region masking, downstream of anything this image does, and no
+  // ordering of clip and unmask changes it.
+  //
+  // The fix lives in R, where it already did: mask to the AOI before computing
+  // anything. Script 10 checks its own band ranges AFTER that mask for exactly
+  // this reason.
+  .clip(aoiExport)
+  .unmask(NODATA)
   .toInt16()
   .set({
     window:      WINDOW_NAME,

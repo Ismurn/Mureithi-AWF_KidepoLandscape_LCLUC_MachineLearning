@@ -119,13 +119,46 @@ if (terra::nlyr(terr) != length(terr.bands)) {
 names(terr) <- terr.bands
 terra::NAflag(terr) <- comp.nodata
 
+## compareGeom rather than trust: the terrain export used the same crs, scale
+## and region as the composites, which SHOULD align it, but a half-pixel offset
+## would quietly attach the wrong slope to every pixel.
+comp <- load.composite.pair()
+yr.a <- comp$years[1]
+yr.b <- comp$years[2]
+
+if (!isTRUE(terra::compareGeom(comp$a, terr, stopOnError = FALSE, messages = FALSE))) {
+  stop(glue("The terrain raster is NOT on the composite grid. Re-export it ",
+            "from 01d with an identical `region`, `crs` and `scale`."))
+}
+
+aoi <- load.aoi()
+aoi.union.v <- terra::vect(aoi$union)
+aoi.parts.v <- terra::vect(aoi$parts)
+mask.to.aoi <- function(r) terra::mask(terra::crop(r, aoi.union.v), aoi.union.v)
+
+## MASK TO THE AOI BEFORE CHECKING ANYTHING, and this is not an optimisation.
+##
+## The first run of this script failed its own range check: elevation came back
+## with a minimum of 0, which is impossible in a landscape whose valley floor is
+## at 709 m. The export is not at fault. Earth Engine writes the bounding
+## RECTANGLE of a non-rectangular export region, fills everything outside the
+## region itself with 0, and tags the file with no nodata value at all — so
+## 70.5% of this raster is zero-fill that is indistinguishable from data to
+## anything that reads the file naively. The -9999 sentinel reaches only the
+## pixels masked inside the region, and `clip` before `unmask` does not change
+## that, because it is the EXPORT's region masking that writes the zeros, not
+## the image's own mask. The same 70% zero-fill was found once before in this
+## project, in the composites.
+##
+## Inside the PA union there are no zeros at all: elevation runs 709-3175 m.
+## So the rule is the one already used everywhere else here — mask to the AOI,
+## then compute. A check run before the mask tests the zero-fill, not the data.
+terr.m <- mask.to.aoi(terr)
+
 ## The raster stays INTEGER. Dividing 5 bands of ~32 million cells would
 ## materialise half a gigabyte of float temp files for no gain: the scale is
 ## applied to the SAMPLE in Phase 1, exactly as the composites are handled.
-##
-## compute = TRUE forces a full read of all five bands, which takes a minute or
-## so. That is the price of the check and it is worth paying once.
-mm <- terra::minmax(terr, compute = TRUE)
+mm <- terra::minmax(terr.m, compute = TRUE)
 
 cat("\n[0] BAND RANGES IN TRUE UNITS (after the lookup scale)\n\n")
 range.tbl <- tibble(
@@ -161,30 +194,11 @@ say("\n    All bands land inside their possible ranges. Scales confirmed.")
 #  the numbers are mutually comparable. Latitude comes along because solar
 #  zenith depends on it and the AOI spans about a degree.
 
-comp <- load.composite.pair()
-yr.a <- comp$years[1]
-yr.b <- comp$years[2]
-
-aoi <- load.aoi()
-aoi.union.v <- terra::vect(aoi$union)
-aoi.parts.v <- terra::vect(aoi$parts)
-mask.to.aoi <- function(r) terra::mask(terra::crop(r, aoi.union.v), aoi.union.v)
-
 f.cand <- file.path(path.out.cls, "change_strong_clusterfree.tif")
 if (!file.exists(f.cand)) stop("Candidate raster missing — run 03c_k_sensitivity.R first.")
 
 cand <- mask.to.aoi(terra::rast(f.cand))
 names(cand) <- "candidate"
-
-## compareGeom rather than trust: the terrain export used the same crs, scale
-## and region as the composites, which SHOULD align it, but a half-pixel offset
-## would quietly attach the wrong slope to every pixel.
-if (!isTRUE(terra::compareGeom(comp$a, terr, stopOnError = FALSE, messages = FALSE))) {
-  stop(glue("The terrain raster is NOT on the composite grid. Re-export it ",
-            "from 01d with an identical `region`, `crs` and `scale`."))
-}
-
-terr.m <- mask.to.aoi(terr)
 
 ndvi.a <- mask.to.aoi(comp$a[["NDVI"]])
 ndvi.b <- mask.to.aoi(comp$b[["NDVI"]])
@@ -289,16 +303,44 @@ samp <- samp %>%
   )
 
 ## The recorded angles, if the CSV made it and the property names were right.
+##
+## THE TILE FILTER BELOW IS NOT COSMETIC. The first run of this script reported
+## recorded and computed zenith differing by 20.1 degrees, which would have
+## discredited the computation. The computation was right and the REFERENCE was
+## contaminated: of 377 scenes in the CSV, 235 are MGRS zone 01 and zone 60
+## tiles — the antimeridian, a third of the way round the planet — acquired at a
+## mean of 18:00 UTC against 07:24 for the real ones.
+##
+## They arrive because an HLS tile straddling 180 degrees has a footprint that
+## wraps in longitude, so Earth Engine's filterBounds() matches it against any
+## query geometry anywhere. All 235 are Sentinel-2; every Landsat scene in the
+## file is genuine.
+##
+## This does NOT affect any pixel-level result anywhere in this project. A
+## leaked scene has no actual data over Kidepo, so it contributes a masked
+## pixel and drops out of every median, count and mean. What it does corrupt is
+## anything computed from per-SCENE metadata, which is this table, and the
+## n_scenes columns printed by scripts 01, 01b and 03.
+##
+## The AOI lies wholly inside UTM zone 36, which is why the composites are
+## exported in EPSG:32636, so keeping the T36 tiles is exact rather than
+## approximate.
 sun.recorded <- NULL
 if (file.exists(f.sun)) {
   raw <- suppressWarnings(readr::read_csv(f.sun, show_col_types = FALSE))
   zcol <- intersect("MEAN_SUN_ZENITH_ANGLE",  names(raw))
   acol <- intersect("MEAN_SUN_AZIMUTH_ANGLE", names(raw))
-  have.keys <- all(c("year", "doy") %in% names(raw))
+  have.keys <- all(c("year", "doy", "scene_id") %in% names(raw))
+
   if (have.keys && length(zcol) == 1 && length(acol) == 1 &&
       any(!is.na(raw[[zcol]])) && any(!is.na(raw[[acol]]))) {
+
+    in.zone <- stringr::str_detect(raw$scene_id, "T36")
+    say(glue("    Sun-geometry CSV: {sum(in.zone)} of {nrow(raw)} scenes are UTM zone 36;
+    dropping {sum(!in.zone)} antimeridian tiles that filterBounds() let through."))
+
     sun.recorded <- raw %>%
-      filter(!is.na(.data[[zcol]])) %>%
+      filter(in.zone, !is.na(.data[[zcol]])) %>%
       group_by(year) %>%
       summarise(scenes       = n(),
                 mean.doy     = mean(doy, na.rm = TRUE),
@@ -524,6 +566,95 @@ say(glue("
 illum.share <- illum.diff / mean.dndvi
 illum.share.max <- illum.cross / mean.dndvi
 
+## PHASE 4b — THE ARGUMENT THAT DOES NOT DEPEND ON A REGRESSION AT ALL
+##
+## Everything above is a regression, and every regression here has an
+## identification problem worth stating plainly.
+##
+## Delta cos(i) has two sources of per-pixel variation. One is TERRAIN meeting
+## the common between-year change in solar position; the other is each pixel's
+## own OBSERVATION TIMING, which moves the sun differently from pixel to pixel.
+## The first is a pure function of slope and aspect, so it is collinear with
+## terrain and cannot be separated by regression from the terrain-correlated
+## ecology that script 08 warned about — steeper ground here is genuinely
+## different ground. Only the timing component gives variation that is not a
+## terrain function, and it is small.
+##
+## Running the same regression on recorded YEAR-MEAN angles demonstrates the
+## problem rather than resolving it: with scalar angles, delta cos(i) reduces to
+## the terrain-only component, the coefficient flips sign and inflates roughly
+## sixfold, and the apparent attributable share jumps to about a fifth of the
+## greening. That is not a sensitivity result about illumination. It is a
+## confounded estimator measuring where the vegetation is.
+##
+## So the question is turned round, which removes the regression entirely: how
+## strongly would NDVI have to respond to illumination for illumination to
+## explain the observed greening? That required coefficient is just
+## mean(dNDVI) / mean(delta cos i), and it can be compared against what NDVI's
+## response to cos(i) could physically be. NDVI spans about one unit in total,
+## so a coefficient approaching or exceeding 1 is not available at all, and the
+## measured responses here are nearer 0.1.
+
+required.coef <- function(dcosi.mean) mean.dndvi / dcosi.mean
+
+req.computed <- required.coef(mean(samp$dcosi))
+req.recorded <- NA_real_
+illum.share.rec <- NA_real_
+
+if (!is.null(sun.recorded) && nrow(sun.recorded) == 2) {
+
+  rec.a <- sun.recorded %>% filter(year == yr.a)
+  rec.b <- sun.recorded %>% filter(year == yr.b)
+
+  samp <- samp %>%
+    mutate(
+      dcosi.rec = cos.illum(slope.deg, aspect.deg,
+                            rec.b$mean.zenith, rec.b$mean.azimuth) -
+                  cos.illum(slope.deg, aspect.deg,
+                            rec.a$mean.zenith, rec.a$mean.azimuth)
+    )
+
+  req.recorded <- required.coef(mean(samp$dcosi.rec))
+
+  ## Kept only to show how badly the terrain-only version misbehaves.
+  b.rec <- coef(lm(dndvi ~ dcosi.rec + factor(pa), data = samp))[["dcosi.rec"]]
+  illum.share.rec <- (b.rec * mean(samp$dcosi.rec)) / mean.dndvi
+
+  say(glue("
+    [4b] WHAT WOULD ILLUMINATION HAVE TO BE DOING?
+
+      recorded zenith, {yr.a} / {yr.b}       : {round(rec.a$mean.zenith, 2)} / {round(rec.b$mean.zenith, 2)} degrees ({sum(in.zone)} zone-36 scenes)
+      computed zenith, {yr.a} / {yr.b}       : {round(mean(samp$zen.a), 2)} / {round(mean(samp$zen.b), 2)} degrees
+      between-year shift, recorded        : {sprintf('%+.2f', rec.b$mean.zenith - rec.a$mean.zenith)} degrees
+      between-year shift, computed        : {sprintf('%+.2f', mean(samp$zen.b) - mean(samp$zen.a))} degrees
+
+    The two sources agree the shift is under a degree and disagree on its sign,
+    which is expected: a fraction of a degree is below what either resolves.
+    Neither supports a material illumination effect, because of what the shift
+    would have to buy:
+
+      observed mean dNDVI                 : {sprintf('%+.5f', mean.dndvi)}
+      mean delta cos(i), computed angles  : {sprintf('%+.5f', mean(samp$dcosi))}
+      mean delta cos(i), recorded angles  : {sprintf('%+.5f', mean(samp$dcosi.rec))}
+
+      coefficient REQUIRED to explain it:
+        with computed angles              : {sprintf('%+.2f', req.computed)} NDVI per unit cos(i)
+        with recorded angles              : {sprintf('%+.2f', req.recorded)}
+      coefficient actually measured       : {sprintf('%+.3f', b.diff)} (differenced), {sprintf('%+.3f', b.cross)} (cross-sectional)
+
+    NDVI spans roughly one unit end to end, so a response of {sprintf('%.1f', abs(req.computed))} or {sprintf('%.1f', abs(req.recorded))} NDVI
+    per unit of cos(i) is not merely unmeasured here, it is not physically
+    available. The required value is {round(abs(req.computed) / abs(b.cross))}x and {round(abs(req.recorded) / abs(b.cross))}x the largest response
+    this data shows. Illumination cannot account for the greening on either
+    angle source, and that conclusion rests on arithmetic rather than on any
+    regression's identifying assumptions.
+
+    (For the record, the terrain-only regression on recorded angles returns
+    {sprintf('%+.1f', 100 * illum.share.rec)}% with a coefficient of {sprintf('%+.3f', b.rec)}. Its sign is opposite to the
+    differenced estimate and its magnitude {round(abs(b.rec) / abs(b.diff))}x larger — the signature of an
+    estimator absorbing terrain-correlated ecology, not of a physical effect.)"))
+}
+
 
 # =============================================================================
 #  PHASE 5 — ROUTE 2: IS THE OBSERVATION-DEPTH ARTEFACT A TERRAIN ARTEFACT?
@@ -654,7 +785,16 @@ cat(sprintf("  ROUTE 1  illumination explains %+.1f%% of the greening (differenc
             100 * illum.share))
 cat(sprintf("           at most %+.1f%% on the generous cross-sectional bound.\n",
             100 * illum.share.max))
-cat(sprintf("           Aspect preference: %.2fx spread across octants.\n\n", asp.spread))
+cat(sprintf("           Aspect preference: %.2fx spread across octants.\n", asp.spread))
+cat(sprintf("           To explain the greening, NDVI would have to respond %+.1f\n",
+            req.computed))
+if (!is.na(req.recorded)) {
+  cat(sprintf("           (or %+.1f on recorded angles) per unit cos(i), against a\n",
+              req.recorded))
+} else {
+  cat("           per unit cos(i), against a\n")
+}
+cat(sprintf("           measured %+.3f and a physical ceiling near 1.\n\n", b.cross))
 cat(sprintf("  ROUTE 2  depth artefact is %.2fx stronger on steep ground than flat\n",
             gap.steep / gap.flat))
 cat(sprintf("           (interaction p = %s).\n\n", format.pval(p.inter, digits = 2)))
@@ -845,12 +985,15 @@ readr::write_csv(
     quantity = c("mean.dndvi", "doy.shift.days", "mean.dcosi",
                  "b.differenced", "illum.attributable", "illum.share",
                  "b.crosssectional", "illum.upper.bound", "illum.share.max",
+                 "illum.share.recorded.angles.confounded",
+                 "required.coef.computed.angles", "required.coef.recorded.angles",
                  "aspect.spread", "lit.enrichment", "shaded.enrichment",
                  "gap.effect.flat", "gap.effect.steep", "gap.interaction.p",
                  "cand.illum.explicable.share"),
     value = c(mean.dndvi, doy.shift, mean(samp$dcosi),
               b.diff, illum.diff, illum.share,
               b.cross, illum.cross, illum.share.max,
+              illum.share.rec, req.computed, req.recorded,
               asp.spread, lit.enrich, shd.enrich,
               gap.flat, gap.steep, p.inter,
               expl.share)

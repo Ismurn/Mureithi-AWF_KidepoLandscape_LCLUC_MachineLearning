@@ -275,8 +275,16 @@ var burntStack = stackYears(annualBurnt);
  * using NDVI to define its own validity would be circular.
  */
 function forExport(img, label) {
+  // Clip before unmask so the sentinel reaches pixels masked INSIDE the region
+  // — a pixel with no clear look in a given year. It does NOT sentinel-fill the
+  // area outside the region: Earth Engine exports the bounding RECTANGLE, fills
+  // outside the region with 0, and writes no nodata tag, so roughly 70% of each
+  // of these files is zero fill indistinguishable from data on a naive read.
+  // That happens in the export, downstream of this image, and no ordering of
+  // clip and unmask prevents it. The R stage masks to the AOI before computing
+  // anything, which is why it never sees those zeros.
   return img
-    .clip(aoiExport)       // clip BEFORE unmask — the lesson from 02
+    .clip(aoiExport)
     .unmask(NODATA)
     .toInt16()
     .set({

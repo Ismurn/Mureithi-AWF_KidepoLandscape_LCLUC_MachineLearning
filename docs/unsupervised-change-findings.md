@@ -9,9 +9,16 @@
 
 ## 1. Headline
 
-Across five years, **the protected-area network got greener, and there is no
-evidence of widespread land-cover loss.** For an audience expecting a
-degradation narrative, that is the finding.
+Between these two dry seasons, **the protected-area network was greener, and
+there is no evidence of widespread land-cover loss.** For an audience expecting
+a degradation narrative, that is the finding.
+
+**Read "between these two dry seasons" literally.** The annual series (§7.4)
+shows the 2019→2024 step is **ordinary** against this landscape's year-to-year
+variation — 3 of the 4 comparable five-year steps in the record are at least as
+large, and 2020 and 2026 were far greener than either date compared here. This
+is a difference between two particular years, not a trend, and never an annual
+rate.
 
 The change signal is dominated by a landscape-wide greenness shift between the
 two dry seasons, not by conversion and not by fire. Once a change is required to
@@ -26,9 +33,22 @@ Three numbers that should **not** be quoted as change, and why:
 | 1,600 km² "substantive change" | pixels moving 2+ cluster ranks — a rank, not a distance |
 | 877 km² "residual" | the above, minus fire; inherits the same flaw |
 
-The defensible figure is **277.5 km² (3.57%)** of candidate change — large
-spectral movement, no fire to explain it, in patches of 1 ha or more. Candidate,
-not confirmed.
+The defensible figure is **263.8 km² (3.39%)** of candidate change — large
+spectral movement, no fire to explain it, in patches of 1 ha or more, and
+corrected for the observation-depth artefact (§7.5). Candidate, **not
+confirmed**: three separate attempts to explain it away have failed (fire,
+small missed fires, terrain illumination) and a fourth test could not
+adjudicate it, but nothing has yet shown what the greening *is*. Settling that
+needs high-resolution imagery.
+
+The uncorrected figure is 277.5 km² (3.57%); quote the corrected one.
+
+**One split that the net figure hides.** About **18.8% of the candidate area —
+roughly 52 km² — is browning rather than greening**, and it is concentrated in
+particular reserves: Lwala (100% of its candidates), Kidepo Valley (98.8%),
+Lopeichubei (84.6%) and Zulia (73.9%), against 0–2% in Timu, Rom and Imatong
+(§7.5). Browning is what would indicate clearing or degradation, so those
+reserves warrant attention even though the network-level signal is greening.
 
 ---
 
@@ -50,6 +70,7 @@ not confirmed.
 | Maps | `R/07_maps.R` | eight cartographic figures |
 | Sampling-bias test | `R/08_sampling_bias.R` | how much of the greening is observation depth |
 | Candidate examination | `R/09_check_candidates.R` | by-PA areas, patch sizes, boundary vs roughness, burn test |
+| Depth-adjusted areas | `R/12_depth_adjusted_areas.R` | the headline 263.8 km², and its insensitivity to the coefficient |
 | Terrain and observation timing | `gee/01d_export_terrain.js` | elevation, slope, aspect, mean observation day per year |
 | Terrain-illumination test | `R/10_terrain_test.R` | whether the candidates are a light artefact |
 | Solar-geometry self-check | `R/tests/test_solar_geometry.R` | validates the illumination arithmetic in `R/10` |
@@ -214,6 +235,9 @@ patches ≥ 1 ha.
 > ### 277.5 km² — **3.57%** of the analysed area
 >
 > in contiguous patches of 1 ha or more.
+>
+> **Corrected for observation depth in §7.5: 263.8 km² (3.39%).** That is the
+> figure to quote; the one above is the uncorrected input to it.
 
 This replaces both cluster-dependent versions (146.8 km² at k=3, 226.2 km² at
 k=6). It is **larger** than either, because it drops the requirement that a
@@ -238,6 +262,12 @@ Landscape-wide median ΔNDVI is **+0.0137** — 2024 greener than 2019.
 Land-cover conversion produces clearing as well as regrowth, so a conversion
 signal would sit near 50% greening. A landscape moving one way together is a
 wetter or later-senescing season, and no burn mask can remove it.
+
+**But do not read that as "nothing browned".** Among the *candidate* patches
+specifically, **18.8% are browning**, and §7.5 shows they are not spread evenly:
+four reserves carry candidates that are predominantly or entirely browning while
+the three that drive the greening are almost purely greening. The
+landscape-level direction and the per-reserve direction are different findings.
 
 ### 7.1 Is the greening just unequal sampling?
 
@@ -323,18 +353,73 @@ labelling threads scattered clumps into one component, so the "largest patch,
 
 ---
 
-### 7.3 The terrain-illumination test — designed, not yet run
+### 7.3 Terrain illumination is not the explanation — settled
 
-**Status: awaiting the GEE export.** `gee/01d_export_terrain.js` and
-`R/10_terrain_test.R` are written and syntax-checked; the test cannot run until
-`kidepo_terrain_dry_late_utm36n_30m.tif` is exported and downloaded. What
-follows is the design and the expectations set in advance of seeing the data —
-recorded here so the eventual result cannot be read as a story told around
-whatever came out.
+**Status: run.** `R/10_terrain_test.R` against the NASADEM terrain export. The
+expectations below were recorded *before* the export existed, and the result
+matched them.
 
-**The hypothesis.** Reflectance on a slope depends on how the sun strikes it.
-The candidates favour rough, hilly ground, so some of the "change" could be
-light rather than land.
+**The verdict: illumination explains +1.3% of the greening, and 0% of the
+candidate area is illumination-explicable. The candidate set survives intact.**
+(This test ran against the uncorrected 277.5 km² raster; the depth correction in
+§7.5 is independent of it and reduces the area to 263.8 km² for unrelated
+reasons.)
+
+**The decisive argument needs no regression.** Turn the question round: how
+strongly would NDVI have to respond to illumination for illumination to explain
+the observed +0.0177 mean ΔNDVI? That is just the greening divided by the
+measured shift in cos(i):
+
+| | Mean Δcos(i) | Required coefficient |
+|---|---|---|
+| Computed angles | +0.0024 | **+7.50** NDVI per unit cos(i) |
+| Recorded angles | −0.0065 | **−2.73** |
+
+The measured response is **+0.099** (differenced) or **−0.119**
+(cross-sectional), and NDVI spans about one unit end to end — so the required
+value is 63× and 23× the largest response this data shows, and beyond what is
+physically available at all. This rests on arithmetic, not on any regression's
+identifying assumptions.
+
+**The mechanism was never available.** Both composites use the same calendar
+window, so the sun sits in nearly the same place in each. Measured: observation
+timing shifted **+2.0 days** between 2019 and 2024, moving the mean solar zenith
+by **−0.29°** (computed) or **+0.79°** (recorded) — both under a degree, and the
+two sources need not agree on the sign of something that small. cos(i) moved by
+0.24% of its range.
+
+**No aspect fingerprint.** Candidate enrichment across the eight compass octants
+spans just **1.15×** (strongest W at 1.04×), and the sun-facing and shaded groups
+both come out at 1.00×. Illumination has a specific signature — a preference for
+lit or shaded slopes — and it is absent.
+
+**What the candidates *are* is higher and steeper**, confirming the hill-reserve
+pattern from §7.2 without supporting an artefact:
+
+| | Candidates | Background |
+|---|---|---|
+| Median slope | 8.0° | 4.0° |
+| Mean slope | 12.6° | 8.1° |
+| Share above 10° | 45.0% | 25.6% |
+| Median elevation | 1,406 m | 1,151 m |
+
+In a *differenced* regression, slope predicting change is a statement about
+where the vegetation is, not about the light.
+
+**Route 2 is refuted too, and in the opposite direction to the hypothesis.** The
+idea was that Fmask cannot tell terrain shadow from cloud shadow, so the §7.1
+depth artefact should concentrate on steep ground. It does the reverse: the
+depth effect is **+0.0029 per look on flat ground against +0.0009 on steep**, a
+ratio of **0.32×** (interaction p < 2e-16). The depth confound is real but it
+lives on flat ground, so it needs no separate terrain correction.
+
+A useful by-product: setting both the depth gap and slope to zero puts the
+greening at **+0.0113**, against §7.1's +0.0127 from a different specification.
+Two routes landing within 0.0014 of each other is a genuine cross-check.
+
+**The hypothesis as originally stated:** reflectance on a slope depends on how
+the sun strikes it; the candidates favour rough, hilly ground, so some of the
+"change" could be light rather than land.
 
 **Why the hypothesis is already in trouble, on mechanism.** Both composites use
 the *same calendar window*, 1 Feb – 31 Mar. The sun is therefore in nearly the
@@ -387,85 +472,240 @@ azimuth 89–130° across the window), so east-facing slopes are lit and
 west-facing ones are not. A north–south asymmetry would *not* be illumination:
 at 3–4°N the sun passes nearly overhead and both are lit about equally.
 
-**Reading the result.** If cos(i) barely moved and there is no aspect
-fingerprint, the hypothesis is closed on mechanism and two explanations remain
-that this two-date design cannot separate. If illumination does prove material,
-the composites need a topographic correction (C-correction or SCS+C) *before*
-the supervised stage — otherwise the Random Forest would learn illumination as
-if it were land cover.
+**What this means for the supervised stage.** A topographic correction
+(C-correction, SCS+C) is **not** needed before the Random Forest. That was the
+contingency if illumination had proved material; it did not.
+
+**What remains open.** Two explanations this pipeline cannot separate: genuine
+woody thickening or regrowth, and real land-use change. Both would need
+high-resolution imagery for a sample of patches. §7.4 asks whether the annual
+series can help.
+
+**One caution on the recorded angles.** The first run reported recorded and
+computed zenith differing by 20.1°, which would have discredited the
+computation. The computation was right; the reference was contaminated by
+antimeridian scenes leaking through `filterBounds()` — see §10. Restricted to
+the correct MGRS zone, the two agree within 0.6°.
 
 ---
 
-### 7.4 The annual series — designed, not yet run
+### 7.4 The annual series: the step is ordinary, and the candidates are not singled out
 
-**Status: awaiting the GEE export.** `gee/03_ndvi_timeseries.js` and
-`R/11_ndvi_timeseries.R` are written and syntax-checked;
-`R/tests/test_trend_estimators.R` passes all 20 of its checks. The export is
-three 11-band stacks — annual dry-season NDVI, clear-look counts, and burnt
-masks for 2016–2026 — totalling roughly 300–350 MB, the largest download in the
-project.
+**Status: run.** `R/11_ndvi_timeseries.R` over the 2016–2026 annual dry-season
+series (NDVI, clear looks and burnt mask, three 11-band stacks).
 
-**The most important thing this work established, it established before the
-export existed.** The series cannot give a trustworthy *absolute* trend, and the
-reason is in this project's own coverage record. Mean clear looks per pixel in
-the dry_late window:
+**Two results, one about the landscape and one about the candidates.**
 
-| | | | | |
+#### The 2019→2024 step is ordinary
+
+On a **fixed** set of 38,622 pixels — the same pixels every year, so composition
+cannot move the series — the annual means are:
+
+| 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0.365 | 0.322 | 0.366 | **0.366** | **0.481** | 0.406 | 0.349 | 0.348 | **0.387** | 0.372 | **0.511** |
+
+- The headline step, 2019→2024, is **+0.0210**.
+- The year-to-year standard deviation is **0.0761**; the largest single-year
+  swing is **+0.139**.
+- **3 of the 4 comparable five-year steps in this record are at least as
+  large.**
+- The series spans 0.322 to 0.511 — a range about **nine times** the step.
+
+2020 and 2026 are genuinely far greener than the two chosen years, and that is
+not a coverage artefact: the composition effect (fixed minus varying footprint)
+is at most **0.009** inside the panel. Two dates five years apart in this
+landscape cannot establish a trend, and the figure must never be quoted as an
+annual rate.
+
+#### The candidates are not distinguishable over the series
+
+This is where the analysis nearly went wrong, and the correction is the most
+important methodological point in this document.
+
+The candidates were **defined** as pixels with |ΔNDVI| > 0.15 between 2019 and
+2024. Selecting pixels on a difference between two years guarantees that they
+will look low in the first year, high in the second, and rising in between —
+whether or not anything real is happening. Fitting a trend across a window that
+*contains* those years therefore partly restates the selection.
+
+Measured in-sample, the candidates looked convincing: a trend **+0.00517 ±
+0.00023 NDVI/yr** faster than their background with PA fixed effects — 22
+standard errors — which the script's own text called "the clean number". The
+tell that something was wrong was the companion figure: an excess 2019 dip of
+−0.067, **three times the headline step it was supposed to explain.**
+
+So the same rule was applied to other year pairs five years apart, as a placebo.
+Those sets were not selected on 2019 or 2024, so whatever they show is what the
+rule manufactures from a landscape where nothing has been singled out:
+
+| Pair | Pixels flagged | % flagged | Leave-out trend gap | Excess dip at first year |
 |---|---|---|---|---|
-| 2016 **4.05** | 2017 **3.15** | 2018 6.10 | 2019 8.13 | 2020 4.75 |
-| 2021 7.00 | 2022 10.96 | 2023 11.25 | 2024 10.41 | 2025 **13.85** |
+| 2018→2023 | 258 | 0.67 | **+0.00582** | −0.0845 |
+| **2019→2024 (real)** | 2,041 | 5.28 | **+0.00424** | **−0.0845** |
+| 2020→2025 | 64 | 0.17 | **+0.01376** | −0.1217 |
+| 2021→2026 | 11,310 | 29.28 | +0.00034 | −0.0271 |
 
-That is the satellite constellation growing — Sentinel-2B from 2017, Landsat 9
-from 2021 — not the weather. Year and observation depth are therefore nearly the
-same variable across this record, and §7.1 established that on this data more
-looks produce higher NDVI.
+**The real pair sits inside the placebo range on both measures, and below the
+placebo mean on the trend (+0.00424 against +0.00664).** Its excess dip is
+*identical* to the 2018→2023 placebo. Both apparent findings belong to the
+selection rule, not to the ground.
 
-Simulated in `test_trend_estimators.R` with a depth response taken from §7.1 and
-the real year-by-year look counts: **a population whose true trend is exactly
-zero reads +0.0024 NDVI/year, which over a five-year gap is +0.0121 — against
-the +0.0127 the headline claims.** A denser archive alone can manufacture
-essentially the entire signal. Any single "depth-adjusted trend" quoted from an
-11-year series here would be a claim the data cannot carry.
+**Conclusion: the series adds no independent support for the candidate patches.**
+They still rest on the two-date comparison alone. It does not refute them
+either — it says this instrument cannot see them.
 
-**This does not undercut §7.1; it supports the choice of dates.** 2019 and 2024
-sit at 8.13 and 10.41 looks — a gap of 2.3, which is what §7.1 measured and
-corrected for. The confound is severe across the *record* precisely because the
-record spans a tripling of coverage, and mild between *those two years* because
-they are close in depth. A differenced comparison between two similar years is
-more defensible than a trend through all of them.
+One caveat on the placebo, which strengthens rather than weakens it. The flagged
+fractions differ enormously because the year pairs differ in their
+landscape-wide NDVI change: 2021→2026 rose 0.105 across the whole landscape, so
+a fixed 0.15 threshold catches 29% of it and is barely selective at all. The
+comparisons worth weighing are therefore with the pairs of *similar or greater*
+selectivity — and both of those, 2018→2023 at 0.67% and 2020→2025 at 0.17%,
+produce a **larger** trend gap than the real pair. Only the barely-selective
+pair gives a smaller one.
 
-**So the script is built around comparisons where the confound cancels.** Both
-the depth trend and the rainfall history are common to every pixel in a
-landscape this size, so they subtract out when candidates are compared with
-their own background. Four questions, in order of what they can settle:
+The probe uses a simplified one-sided rule (ΔNDVI > 0.15, no fire switch, no
+minimum mapping unit) so every pair is treated identically; that is why it flags
+5.28% for the real pair where §7's full rule gives 3.57%.
 
-1. **Do candidates trend faster than background?** A difference-in-differences
-   with PA fixed effects. Validated: with a common depth confound planted
-   alongside a candidate-only trend of +0.004/yr, the naive per-group estimate
-   reads +0.0065 for candidates and +0.0024 for a truly flat background, while
-   the DiD recovers **+0.0040** — and reads zero when no candidate trend is
-   planted.
-2. **Do they move steadily or bounce?** Per-pixel R² of a linear fit. Steady
-   movement and an equal-sized random swing are separated cleanly in simulation
-   (median R² 0.69 against 0.05).
-3. **Was 2019 a dip for the candidates specifically?** Each group against its
-   own 2018 and 2020, so a landscape-wide bad year drops out. Validated both
-   ways: a planted candidate-only dip is recovered, a planted landscape-wide one
-   is correctly *not* reported as an anomaly.
-4. **How large is the 2019→2024 step against ordinary year-to-year spread?**
+#### Why no absolute trend is quoted, and a correction to an earlier claim
 
-**One calibration that matters for reading the output.** Absolute R² is not a
-usable threshold on this data. Over nine years at the year-to-year noise this
-landscape carries (~0.04 NDVI), the median R² of a *genuine* linear trend is
-0.16 at +0.005/yr and only 0.39 at +0.010/yr, against ~0.09 for pure noise. An
-R² of 0.15 is not evidence of no trend — only the gap between the two groups
-carries information.
+Observation depth rises across the record (correlation with year **+0.64**:
+Sentinel-2B from 2017, Landsat 9 from 2021), and §7.1 established that *within a
+pixel* more looks produce higher NDVI (+0.0033 per look). Before the data
+existed, this document predicted that a denser archive alone could manufacture
+the whole signal.
 
-**Fire is the second confound.** Cumulative burnt fraction runs from 19.7%
-(2019) to 43.9% (2018), and 2019 and 2024 are the two least-burnt years on
-record — which is why §3 chose them, and which means the pair sits at one end of
-the fire distribution. The burnt stack is exported so this is handled rather
-than hoped away.
+The data says something more awkward. Across years, depth correlates with mean
+NDVI at **−0.52** — the wrong sign. Wet years are cloudy years: they yield
+*fewer* clear looks and *greener* vegetation, and that mechanism dominates the
+annual means. So there are two confounds of **opposite sign** — a within-pixel
+compositing artefact pushing a trend up, and a rainfall–cloud relationship
+pushing it down — and neither can be separated from the other or from a real
+trend with nine annual points. The earlier claim that depth would inflate the
+trend is withdrawn; its net direction is unknown.
+
+The same problem defeats correcting the trend map. Estimated within year across
+pixels, the depth coefficient comes out **−0.00049 per look**, opposite in sign
+to the differenced +0.0033 — exactly the failure §7.1 warned of, where a
+cross-pixel slope measures which ground gets seen rather than the artefact.
+Applying it would have *inflated* the trend (+0.0059 to +0.0064 per year). **No
+depth correction is applied**, and the map is published raw.
+
+#### The trend map, and what it covers
+
+`outputs/timeseries/ndvi_trend_slope.tif`, mean slope **+0.0059 NDVI/yr** over
+the balanced panel — a level that is not interpretable, for the reasons above;
+read the pattern only. Requiring all nine years to be adequately supported keeps
+just **19.5% of the AOI**, and that fifth is flatter and less cloudy than the
+whole landscape.
+
+#### Fire
+
+Cumulative burnt fraction runs 19.7% (2019) to 43.9% (2018), but its correlation
+with year is only **+0.04** — fire varies between years without trending, so it
+does not bias the series direction.
+
+---
+
+### 7.5 The candidate areas, depth-adjusted
+
+`R/12_depth_adjusted_areas.R` closes the oldest outstanding caveat in this
+document: §7.1 corrected the headline ΔNDVI for observation depth but never
+corrected the *areas*, which were left flagged as "likely a little generous".
+
+**The rule is reproduced before it is adjusted.** The script rebuilds §7's
+cluster-free candidate set from scratch and gets **277.52 km²** against the
+published 277.5 — a difference of 0.02 km². An adjusted area means nothing
+unless the unadjusted one can be recovered first, so the script stops if it
+cannot.
+
+**The adjustment is per-pixel and slope-dependent**, using §7.3's finding that
+the depth response is about three times stronger on flat ground:
+
+`ΔNDVI.adj = ΔNDVI − max(b_gap + b_inter · slope, 0) · obs.gap`
+
+The slope *main* effect is deliberately not subtracted — in a differenced
+regression that is a statement about where the vegetation is, not an artefact.
+The coefficient is clamped at zero above its 29.3° break-even, affecting 4.7% of
+pixels, because a negative depth response has no mechanism.
+
+**Result: 277.5 km² → 263.8 km², a fall of 13.7 km² (−4.9%).** Of that, 25.5 km²
+was removed and 11.8 km² added.
+
+**And it is not sensitive to the coefficient**, which was predicted in advance:
+the adjustment is of order 0.006 NDVI against a threshold of 0.15, thirty times
+smaller than the bar it has to move pixels across.
+
+| Adjustment strength | Area | Change |
+|---|---|---|
+| ×0 (check) | 277.52 km² | 0.0% |
+| **×1 (estimated)** | **263.80 km²** | **−4.9%** |
+| ×2 | 254.69 km² | −8.2% |
+| ×3 | 251.54 km² | −9.4% |
+
+A threefold overcorrection moves the area by under 10%. The caveat was real but
+small.
+
+**A cross-check worth recording.** Re-estimating §7.1's simpler specification on
+a fresh sample gives **+0.002120 NDVI per clear look** against its own implied
+~0.00214 — essentially identical. With the slope interaction the attributable
+share is 32% and the corrected greening **+0.0120**, against §7.1's 28% and
++0.0127. Two specifications, two samples, agreeing within 0.0007.
+
+#### Why some reserves gain area, and the split this uncovered
+
+The adjustment does not shrink every reserve. Its direction obeys
+
+`sign(area change) = −sign(observation gap) × sign(ΔNDVI)`
+
+because the threshold is **two-sided**. A reserve seen *less* often in 2024 has
+its 2024 NDVI biased downward, so a **greening** pixel there is pushed further
+past +0.15 and gained — while a **browning** pixel in the same reserve is pushed
+back towards zero and lost.
+
+Both terms are needed. Taking the gap alone, three of thirteen reserves look
+like they break the rule; with the browning share beside it, all thirteen follow
+it:
+
+| | Clear looks 2019 → 2024 | Browning share of candidates | Area change |
+|---|---|---|---|
+| Timu | 20.6 → 14.8 (**−5.8**) | 0.0% | **+18.4%** |
+| Kidepo Valley | (+1.6 among candidates) | **98.8%** | **+24.6%** |
+| Lwala | 9.6 → 6.3 (−3.5) | **100.0%** | −6.9% |
+| Lopeichubei | (−0.8) | **84.6%** | −0.9% |
+| Imatong | 6.2 → 10.3 (+5.5) | 2.2% | −12.8% |
+| Kidepo | 6.8 → 10.5 (+3.7) | 25.1% | −10.2% |
+
+The three rows that the gap alone could not explain carry **94.5% browning
+candidates against 12.2% elsewhere.** Two earlier explanations for them — the
+slope clamp, then a mismatch between whole-reserve and candidate-pixel gaps —
+were both tested and both wrong; this one accounts for every row.
+
+**And it exposes something that matters more than the adjustment did.** About
+**18.8% of the candidate area is *browning*, not greening — roughly 52 km²** —
+and it is heavily concentrated:
+
+| Reserve | Candidate area | Browning share | Browning area |
+|---|---|---|---|
+| Zulia | 21.2 km² | 73.9% | ~15.7 km² |
+| Kidepo | 59.2 km² | 25.1% | ~14.9 km² |
+| Lopeichubei | 10.1 km² | 84.6% | ~8.5 km² |
+| Lwala | 6.1 km² | 100.0% | ~6.1 km² |
+| Kidepo Valley | 4.2 km² | 98.8% | ~4.1 km² |
+| Timu, Rom, Imatong, Nyangea, Agoro | 146.5 km² | 0–2.2% | ~2.3 km² |
+
+So the landscape-level finding — greener overall, no evidence of widespread loss
+— is true and **conceals a split**. The large hill reserves that drive the
+greening (Timu, Rom, Imatong) are almost purely greening, while Lwala, Kidepo
+Valley and Lopeichubei have candidate change that is almost entirely the other
+way. For management the split is the more useful fact, and **browning candidates
+are the ones that would indicate clearing or degradation**, so they deserve the
+first look when high-resolution imagery is obtained (§11).
+
+Two caveats carry over: these are still *candidates*, not confirmed change; and
+the reserves concerned are small, so a few patches crossing the
+minimum-mapping-unit threshold move their percentages a long way.
 
 ---
 
@@ -484,10 +724,36 @@ and north arrows, patchwork for panels, rnaturalearth for country context.
 | `map_05_fire_state.png` | MODIS burnt area by date |
 | `map_06_scar_age.png` | Days since burn at the window's end |
 | `map_07_dndvi.png` | Greenness difference, diverging scale |
-| `map_08_candidate_change.png` | The 277.5 km² of candidate change |
+| `map_08_candidate_change.png` | Candidate change — the **uncorrected** 277.5 km² set, since `07_maps.R` predates §7.5. Re-run it against `change_strong_clusterfree_depthadj.tif` before using this map in a report |
 
 Zoom panels of the largest candidate patches, before and after, are written by
 `R/09_check_candidates.R` into `outputs/candidates/`.
+
+**Terrain test figures** — `R/10_terrain_test.R` into `outputs/terrain/`:
+
+| File | Shows |
+|---|---|
+| `terrain_aspect_rose.png` | Candidate enrichment by compass octant — the diagnostic figure for §7.3. A flat rose is the absence of an illumination fingerprint |
+| `terrain_candidates_over_hillshade.png` | Candidates over a hillshade of the worst-affected reserve, lit from the east-southeast as at the overpass. Candidates clinging to one side of every ridge would have meant illumination |
+| `terrain_slope_elevation_plane.png` | Candidate frequency across slope and elevation — what the candidates genuinely are |
+| `terrain_dndvi_vs_dcosi.png` | ΔNDVI against the change in illumination; the null made visible |
+
+**Annual series figures** — `R/11_ndvi_timeseries.R` into `outputs/timeseries/`:
+
+| File | Shows |
+|---|---|
+| `ts_01_annual_series.png` | Mean NDVI by year on a fixed pixel set, with the two headline years circled, point size for observation depth and colour for fire. The red dashed line is the varying-footprint series |
+| `ts_02_candidate_trajectories.png` | Candidate against background year by year |
+| `ts_03_slope_distributions.png` | Per-pixel trend distributions for the two groups |
+| `ts_04_trend_map.png` | Uncorrected NDVI trend 2018–2026 over the balanced panel (19.5% of the AOI) |
+
+**Depth adjustment** — `R/12_depth_adjusted_areas.R` writes
+`outputs/qc/depthadj_candidate_change.png`, showing which candidate pixels the
+observation-depth correction removes and which it adds.
+
+Read `ts_02` and `ts_03` with §7.4's selection-bias warning attached: they show
+a real difference between the two groups, but the placebo test establishes that
+a difference of that size is what the selection rule produces on its own.
 
 Diagnostic plots from earlier scripts remain in `outputs/qc/` and
 `outputs/classification/`. Those are working figures, not presentation ones —
@@ -503,14 +769,21 @@ no scale bars, no north arrows — and should not go in a report.
 - Fire does not drive the change signal, tested against recorded fires.
 - The raw unsupervised change figures are inflated by cluster-boundary effects.
 - The dominant signal is a modest, one-directional greening.
+- Terrain illumination does not explain it (§7.3): the response required is
+  23–63× what is measured, and beyond what is physically available.
+- The 2019→2024 step is **ordinary** against this landscape's year-to-year
+  variation (§7.4), so it is a difference between two particular years and not
+  a rate.
 
 **Not established:**
 
 - That the remaining candidate patches *are* land-cover change. They are
   candidates: a large greenness change with no *recorded* fire to explain it.
   §7.2 rules out recovering small fires and shows the patches green from an
-  already-vegetated baseline, concentrated in the small hill reserves. What
-  that greening *is* remains open.
+  already-vegetated baseline, concentrated in the small hill reserves; §7.3
+  rules out terrain illumination; §7.4 finds the annual series cannot
+  distinguish them from what the selection rule produces on its own. What that
+  greening *is* remains open, and three tests have now failed to settle it.
 - Any thematic class labels. k-means finds spectral clusters; the tentative
   names in the scripts are read off centroid signatures and are unverified.
 - Anything about causes. Greening is consistent with rainfall differences, woody
@@ -520,24 +793,25 @@ no scale bars, no north arrows — and should not go in a report.
 **Carry these caveats:**
 
 1. 2019 has ~25% fewer clear observations than 2024. Tested (§7.1): it inflates
-   the greening by about 28%, so the corrected figure is ~+0.013 ΔNDVI. The
-   candidate-change areas in §7 have **not** been recomputed on a depth-adjusted
-   basis and are therefore likely a little generous.
+   the greening by 28–32%, so the corrected figure is **+0.012 to +0.013 ΔNDVI**
+   depending on specification. The candidate areas have now been recomputed on a
+   depth-adjusted basis (§7.5): **263.8 km² against 277.5 km², −4.9%.** This
+   caveat is closed.
 2. MODIS burned area is 500 m information — good for landscape attribution, not
    for per-patch verdicts.
-3. Two dates cannot separate inter-annual variability from trend. The series
-   that would is designed and tested (§7.4) and awaits its export. Note what it
-   will and will not deliver: a candidate-versus-background contrast, not an
-   absolute trend, because observation depth roughly triples across the record
-   and can by itself manufacture a greening the size of the headline.
+3. **Two dates cannot separate inter-annual variability from trend, and the
+   series confirms it rather than fixing it** (§7.4). The step is within one
+   year-to-year standard deviation and 3 of 4 comparable steps are at least as
+   large. No absolute trend is recoverable: two confounds of opposite sign
+   (within-pixel compositing, and wet-years-are-cloudy) cannot be separated with
+   nine annual points.
 4. Protected-area polygons overlap by 584 km², so per-PA areas double-count
    unless overlaps are assigned. The §7.2 per-PA table inherits this.
-5. Terrain illumination has not been excluded as a driver of the candidate
-   patches, which favour rough ground in hill reserves. The test is designed and
-   its arithmetic validated (§7.3); it awaits the terrain export. On mechanism it
-   is already unlikely — both composites use the same calendar window, so the
-   sun sits in nearly the same place in each and cos(i) largely cancels in the
-   difference.
+5. **Anything measured on the candidate set is subject to selection bias**
+   (§7.4). They were defined by a 2019→2024 difference, so they will look low in
+   2019, high in 2024 and rising in between for free. Any future claim about
+   them needs a placebo or a leave-out design; an in-sample contrast on these
+   pixels is not evidence, however many standard errors it carries.
 
 ---
 
@@ -551,26 +825,34 @@ Recorded because each was invisible until specifically tested for.
 | Band means 5× too low | Median over valid pixels disagreed with the mean | GEE writes pixels outside the clip as 0, not the sentinel; ~70% of the raster was zero-fill. All statistics now computed AOI-masked; GEE clips before unmasking |
 | MODIS binary burn bands exported as zero | Age band was correct from the same collection and dates | Likely an `ee.Algorithms.If` branch-projection mismatch. Binary bands now derived from the age band |
 | k never actually chosen | The script's own comment said to revisit it after the elbow; it was never acted on | `03b` supplies convergence, silhouette and separability; k=6 retained as reconnaissance only |
+| **Antimeridian scenes leaking into every scene query** | `R/10` reported recorded and computed solar zenith differing by 20.1° — a gap big enough to discredit the computation | 235 of 377 scenes in the sun-geometry export were MGRS **zone 01 and zone 60** tiles, acquired at a mean of 18:00 UTC against 07:24 for the real ones. A tile straddling 180° has a footprint that wraps in longitude, so `filterBounds()` matches it against any geometry anywhere. All 235 were Sentinel-2; every Landsat scene was genuine. **No pixel-level result is affected** — a leaked scene has no data over Kidepo, so it contributes a masked pixel and drops out of every median, count and mean. What it corrupts is anything computed from per-*scene* metadata. Restricting to `T36` tiles brought recorded and computed zenith to within 0.6° |
+| **`n_scenes` columns are inflated** | Same cause as above | The scene counts in `kidepo_hls_coverage_*.csv` (§3) and `kidepo_ndvi_annual_aoi.csv` include antimeridian tiles — e.g. dry_late 2019 reports 141 Sentinel-2 scenes where only ~43 are over the AOI. The window and year choice rested on `mean_obs` and `pct_ok`, which are per-pixel and unaffected, so no decision changes. Do not quote the scene counts |
+| **Zero-fill recurred, and the earlier fix was mis-described** | `R/10`'s own range assertion refused to run: elevation minimum 0 in a landscape whose valley floor is at 709 m | The 2024 note above said clipping before unmasking fixed this. It does not. Earth Engine exports the bounding **rectangle** of a non-rectangular region, fills outside the region with 0, and writes **no nodata tag** — 70.5% of the terrain export. That happens in the export, downstream of the image, so no ordering of `clip` and `unmask` prevents it. The real and only fix is the one already in use: AOI-mask before computing. `R/10` and `R/11` now do that *before* their encoding checks, and the misleading comments in the GEE scripts are corrected |
+| **Annual means compared across different sets of pixels** | The exported annual table read 0.491 NDVI for 2020 and 0.528 for 2026 against ~0.38 for every other year — and both are low-coverage years | A year's mean over whatever pixels happened to be clear is a mean over a *different landscape* each year; in 2020 only 75.9% of the AOI was adequately covered, and the surviving part is not a random part. `R/11` now computes the series over a **fixed** pixel set and prints the varying-footprint version beside it as a `composition` column |
 
 ---
 
 ## 11. Next
 
-1. **Run `gee/01d_export_terrain.js`** and download both outputs, then
-   `R/10_terrain_test.R`. This is the blocking step: it settles §7.3, and it also
-   decides whether the composites need a topographic correction *before* the
-   supervised stage — a Random Forest trained on uncorrected slopes would learn
-   illumination as if it were land cover. `R/tests/test_solar_geometry.R` already
-   passes, so the arithmetic is not what is waiting.
+The unsupervised stage is finished. Everything that could be tested from orbit
+has been: fire (§6), sampling depth (§7.1), the patches themselves (§7.2),
+terrain illumination (§7.3) and the annual series (§7.4). Three of those were
+attempts to explain the candidate change away, and none succeeded; the fourth
+showed the series cannot adjudicate it at all.
+
+1. **Check candidate patches against high-resolution imagery.** This is now the
+   only remaining way to say what the change *is*. Nothing in this pipeline can
+   do it — it needs eyes on imagery the project does not carry. A sample of
+   20–30 patches stratified by protected area would settle whether they are
+   woody thickening, regrowth or land-use change.
+   **Start with the browning patches** (§7.5): ~52 km², concentrated in Lwala,
+   Kidepo Valley, Lopeichubei and Zulia. They are a fifth of the candidate area
+   but they are the fifth that could indicate clearing or degradation, so they
+   carry the most management consequence per patch inspected.
 2. **Agree a class scheme** before labelling. The k=3 strata are a sensible
    skeleton; burnt vs bare and grassland vs wooded grassland need training data.
-3. **Training data** for the supervised stage — the open decision.
-4. **Check candidate patches** against high-resolution imagery before any is
-   described as land-use change. Neither §7.2 nor §7.3 can do this; it needs eyes
-   on imagery this pipeline does not carry.
-5. **Run `gee/03_ndvi_timeseries.js`** and download all four outputs, then
-   `R/11_ndvi_timeseries.R`. See §7.4 — this is written and tested, and it is
-   the only thing in the pipeline that can tell a trend from one wet year
-   against one dry one. It will not produce an absolute trend, for the reason
-   §7.4 sets out; what it can produce is the candidate-versus-background
-   contrast, which is the number that would move the §7.2 conclusion.
+3. **Training data** for the supervised stage — the open decision. Note what
+   §7.3 settled: no topographic correction is needed first.
+4. **If the candidate set is used in the supervised stage at all**, carry §9
+   caveat 5 with it. Those pixels were chosen on a two-year difference, so any
+   statistic computed on them in-sample is contaminated by that choice.
