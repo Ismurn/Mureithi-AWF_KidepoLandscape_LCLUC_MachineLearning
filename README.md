@@ -1,118 +1,212 @@
-# Template Readme for TESS Lab Repositories
+# Land cover and land use change in the Kidepo transboundary landscape
 
-*This document provides the recommended README template for GitHub repositories accompanying research projects, publications, datasets and software developed within TESS Lab. All public repositories should follow this structure where appropriate to ensure they contain the essential information needed to understand, reproduce and reuse the work.
+Reproducible mapping of land cover / land use change (LCLUC) across the
+protected-area network of the Kidepo landscape, spanning north-eastern Uganda
+and south-eastern South Sudan. Built on a hybrid **Google Earth Engine → R**
+architecture following the NASA ARSET workflow: Earth Engine handles the imagery
+and exports facts, R computes every statistic where it can be inspected and
+tested.
 
----
+**Author:** Isaac Mureithi, African Wildlife Foundation — IMureithi@awf.org
 
-# REPLACE WITH PROJECT TITLE
-
-
-This repository contains the data and code used to reproduce the analyses, figures and tables presented in:
-
-> Author A., Author B. & Author C. (Year). *Paper title*. Journal. DOI: https://doi.org/...
-
-A permanent version of this repository is archived at [![DOI](https://zenodo.org/badge/DOI/...svg)](...)
-
-Use of this code is licensed under [![Licence: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](...)
-
-Contact Author A. and/or Author B at EMAIL.
-
+[![Licence: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 ---
 
-## Project overview
+## Status
 
-Provide a brief overview of the project (approximately 2–4 sentences), including the research question or objective, the study system or data, and the purpose of the repository.
+| Stage | State |
+|---|---|
+| Area of interest, composites, QC | **Complete** |
+| Unsupervised change analysis | **Complete** — see [`docs/unsupervised-change-findings.md`](docs/unsupervised-change-findings.md) |
+| Validation against finer imagery | **Sample drawn, interpretation not started** — see [`docs/patch-validation-protocol.md`](docs/patch-validation-protocol.md) |
+| Supervised classification (Random Forest) | **Not started** — blocked on the class scheme and training labels |
 
 ---
 
-## Repository contents
-Provide a brief description of all key datasets and scripts included in the repository.
+## What was found
 
-### Scripts
-*(It is good practice to number scripts when the workflow is sequential (`01_`, `02_`, `03_`...), unless using [Targets](https://books.ropensci.org/targets/))*
+Between the 2019 and 2024 late dry seasons (1 Feb – 31 Mar), across
+**7,771.7 km²** of adequately observed protected area:
 
-| Script | Description |
-|---------|-------------|
-| *01_download_data.R* | Downloads or imports raw datasets. |
-| *02_preprocess_data.R* | Cleans and prepares datasets for analysis. |
-| *03_train_models.R* | Fits statistical or machine learning models. |
-| *04_validation.R* | Performs model validation and accuracy assessment. |
-| *05_generate_figures.R* | Produces all manuscript figures. |
-| *06_tables.R* | Produces manuscript tables and supplementary outputs. |
+- **The network was greener, and there is no evidence of widespread land-cover
+  loss.** Depth-corrected ΔNDVI **+0.012 to +0.013**.
+- **That is a difference between two particular years, not a trend.** The
+  2019→2024 step is +0.021 against a year-to-year standard deviation of 0.076,
+  and 3 of the 4 comparable five-year steps in the 2016–2026 record are at least
+  as large. 2020 and 2026 were far greener than either date compared here.
+- **263.8 km² (3.39%) of candidate change** — a large spectral move, no recorded
+  fire to explain it, in patches of 1 ha or more, corrected for observation
+  depth. *Candidate*, not confirmed.
+- **About a fifth of that is browning, and it is concentrated.** 55.6 km² on the
+  adjusted set, with Lwala's candidates 100% browning, Kidepo Valley's 98.8%,
+  Lopeichubei's 84.6% and Zulia's 73.9%, against 0–2% in Timu, Rom and Imatong.
+  Browning is what would indicate clearing or degradation, so the net greening
+  figure conceals the more actionable finding.
 
-### Data
+Four hypotheses that would have explained the candidate change away were tested
+and none survived: recorded fire (1.11× enrichment), small fires MODIS could not
+see (0.73×), terrain illumination (the required NDVI response is 23–63× what is
+measured), and the annual series — which turned out to be unable to distinguish
+the candidates from what their own selection rule produces on its own.
 
-| File | Description |
-|------|-------------|
-| *field_data.csv* | Field observations used for model calibration. |
-| *training_points.gpkg* | Training dataset. |
-| *validation_points.gpkg* | Independent validation dataset. |
+**What the change actually is remains open.** Settling it needs visual
+interpretation of finer imagery, which is what the validation protocol sets up.
 
-If datasets cannot be shared openly, explain why.
+---
+
+## Repository structure
+
+```
+scripts/gee/    Earth Engine scripts — paste into code.earthengine.google.com
+scripts/R/      the analysis, run with Rscript from the repo root
+scripts/R/tests/ self-checks for the arithmetic the conclusions rest on
+docs/           findings and protocols
+data/           empty; raw inputs live outside the repo (see below)
+outputs/        empty; everything here is regenerated by the scripts
+```
+
+`data/` and `outputs/` are deliberately **not** tracked — see
+[Data availability](#data-availability).
+
+---
+
+## Scripts
+
+Run in numerical order. GEE scripts export to Google Drive; download the outputs
+before running the R script that consumes them.
+
+### Earth Engine
+
+| Script | Produces |
+|---|---|
+| [*01_hls_coverage_check.js*](scripts/gee/01_hls_coverage_check.js) | Clear-observation counts per year and seasonal window, 2016–2026 |
+| [*01b_burn_season_profile.js*](scripts/gee/01b_burn_season_profile.js) | Monthly and per-window burnt fractions from MODIS MCD64A1 |
+| [*01c_export_burn_masks.js*](scripts/gee/01c_export_burn_masks.js) | Burnt extent and **scar age** on the composite grid |
+| [*01d_export_terrain.js*](scripts/gee/01d_export_terrain.js) | NASADEM elevation, slope, aspect, and mean observation day per year |
+| [*02_build_composites.js*](scripts/gee/02_build_composites.js) | The two matched HLS composites — 10 bands, Int16, EPSG:32636, 30 m |
+| [*03_ndvi_timeseries.js*](scripts/gee/03_ndvi_timeseries.js) | Annual NDVI, clear looks and burnt mask, 2016–2026 (3 × 11 bands) |
+| [*04_patch_viewer.js*](scripts/gee/04_patch_viewer.js) | Interactive side-by-side viewer for the validation sample |
+
+### R
+
+| Script | Does |
+|---|---|
+| [*00_functions.R*](scripts/R/00_functions.R) | Shared constants and helpers — paths, band encodings, minimum mapping unit, spatial coherence, solar geometry, closed-form trends |
+| [*01_build_aoi.R*](scripts/R/01_build_aoi.R) | Builds the AOI from 13 WDPA/WDOECM polygons; audits each against a register |
+| [*02_qc_composites.R*](scripts/R/02_qc_composites.R) | Composite QC with an explicit pass/fail verdict |
+| [*03_kmeans_firstlook.R*](scripts/R/03_kmeans_firstlook.R) | k-means reconnaissance (k=6) |
+| [*03b_kmeans_diagnostics.R*](scripts/R/03b_kmeans_diagnostics.R) | Convergence, silhouette, centroid separability |
+| [*03c_k_sensitivity.R*](scripts/R/03c_k_sensitivity.R) | k=3 vs k=6, and the **cluster-free** change estimate that replaces both |
+| [*04_separate_fire.R*](scripts/R/04_separate_fire.R) | First attempt at separating fire using an NBR proxy |
+| [*05_fire_attribution_modis.R*](scripts/R/05_fire_attribution_modis.R) | Fire attribution against the recorded MODIS burn record |
+| [*06_change_magnitude.R*](scripts/R/06_change_magnitude.R) | Change measured in NDVI rather than cluster ranks |
+| [*07_maps.R*](scripts/R/07_maps.R) | Eight cartographic figures |
+| [*08_sampling_bias.R*](scripts/R/08_sampling_bias.R) | How much of the greening is unequal observation depth |
+| [*09_check_candidates.R*](scripts/R/09_check_candidates.R) | Interrogates the candidate patches: areas, sizes, boundaries, burn history |
+| [*10_terrain_test.R*](scripts/R/10_terrain_test.R) | Whether the candidates are an artefact of terrain illumination |
+| [*11_ndvi_timeseries.R*](scripts/R/11_ndvi_timeseries.R) | Trend vs inter-annual variability, and a placebo test of the candidates |
+| [*12_depth_adjusted_areas.R*](scripts/R/12_depth_adjusted_areas.R) | The headline 263.8 km², and its insensitivity to the correction |
+| [*13_draw_validation_sample.R*](scripts/R/13_draw_validation_sample.R) | Draws 80 blind points for high-resolution inspection |
+
+### Tests
+
+These exist because several conclusions rest on hand-expanded algebra, and
+untested algebra produces plausible wrong answers. Both are standalone — no
+rasters, no exports, no network.
+
+| Script | Asserts |
+|---|---|
+| [*tests/test_solar_geometry.R*](scripts/R/tests/test_solar_geometry.R) | 20 checks on the illumination arithmetic: declination against the astronomical calendar, the azimuth convention, cos(i) reducing to cos(zenith) on flat ground, and the estimator recovering a planted coefficient |
+| [*tests/test_trend_estimators.R*](scripts/R/tests/test_trend_estimators.R) | 20 checks on the trend algebra: closed forms equal to `lm()`, the linearity the adjustment relies on, and a difference-in-differences that cancels a planted common confound while still finding a group-specific one |
+
+Run them after touching sections 3.9 or 3.10 of `00_functions.R`:
+
+```powershell
+& "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\tests\test_solar_geometry.R
+```
 
 ---
 
 ## Getting started
 
-Clone this repository and review the project overview and repository structure before running the analysis. 
+### Dependencies
 
-TESS Lab projects typically use [renv](https://rstudio.github.io/renv/) to record package dependencies and software versions. 
-Where an renv.lock file is included, restore the project environment before running any analyses:
-```r
-renv::restore()
+R 4.4.x. Packages are loaded with `pacman` at the top of
+[`00_functions.R`](scripts/R/00_functions.R) and installed on first use:
+`sf`, `terra`, `tidyverse`, `glue`, `scico`, `viridis`, `patchwork`, plus
+`tidyterra`, `ggspatial` and `ggnewscale` for the mapping scripts.
+
+An Earth Engine account is needed for the `scripts/gee/` stage, and a
+[Planet NICFI registration](https://docs.planet.com/platform/integrations/google-earth-engine/nicfi-gee/)
+for the validation viewer's finest imagery. **Both are free.**
+
+`renv` is **not** set up — a gap, since the package versions behind the
+published numbers are therefore not pinned. Versions used were terra 1.8.54,
+sf 1.0.19, tmap 4.1.
+
+### Run order
+
+```powershell
+& "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" scripts\R\01_build_aoi.R
 ```
 
-## Running the analysis
+Then the GEE scripts in order, downloading each export, then the R scripts in
+order. `02_qc_composites.R` stops with a failure verdict if the composites are
+not sound, and later scripts stop with an explicit message naming the file they
+need.
 
-Unless otherwise stated, scripts should be run in numerical order:
+### One environment trap worth knowing
 
-1. *01_download_data.R*
-2. *02_preprocess_data.R*
-3. *03_train_models.R*
-4. *04_validation.R*
-5. *05_generate_figures.R*
-6. *06_tables.R*
-
----
-
-
-## Recommended practice
-
-- Use consistent directory names (`data`, `scripts`, `outputs`, `docs`) across repositories.
-- Never modify files in (`data/raw/`). Store original input data in (`data/raw/`) and write all intermediate and processed datasets to (`data/processed/`) (or another appropriate output directory).
-- Include a table of every important script and dataset — this is often the most useful part for new users.
-- Include ORCID IDs for repository contributors to improve attribution and researcher traceability.
-- If data cannot be shared (e.g. commercial satellite imagery or confidential field data), explain exactly why and state what substitute or sample data are included instead.
-- Use `renv.lock` to record package dependencies and software versions.
-- Archive a permanent release of the repository (e.g. using Zenodo) and cite the DOI in the associated publication.
-- Include a LICENSE file (we normally use the GNU GPL v3 licence in TESS Lab)
-
-### Optional enhancements
-- It can be very helpful to include workflow visualisations (we often create these in [draw.io](https://app.diagrams.net/))
-- Funding acknowledgement if applicable
-- Italicise filenames in tables and text (a nice touch that improves readability).
-- Project logo
+**Run the R scripts from PowerShell, not Git Bash.** Under MSYS the `mingw64`
+DLLs shadow GDAL and `sf` segfaults on load. Every script header repeats this.
 
 ---
 
-## Checklist 
- Every repository should include
+## Data availability
 
-✔ Clear project title
+**No data is committed, and that is deliberate rather than a restriction.**
+Everything the analysis consumes is either a public dataset or an Earth Engine
+export that the scripts in `scripts/gee/` regenerate exactly:
 
-✔ Short project description (2–4 sentences)
+| Input | Source | How to obtain |
+|---|---|---|
+| HLS composites, burn rasters, terrain, annual series | Earth Engine exports | Run `scripts/gee/`; ~900 MB total |
+| HLS L30 / S30 v002 | NASA, via Earth Engine | Public |
+| MODIS MCD64A1 burned area | NASA, via Earth Engine | Public |
+| NASADEM | NASA, via Earth Engine | Public |
+| Protected-area polygons | WDPA / WDOECM | [protectedplanet.net](https://www.protectedplanet.net) — not redistributed here, as their terms require attribution and direct download |
+| Planet NICFI basemaps | Planet, via Earth Engine | Free registration; **non-commercial use only**, and any reproduced figure needs the credit *"Image © Planet Labs PBC"* |
 
-✔ Citation to associated paper/preprint
+Local raster paths are set once, in `path.gee.out` in
+[`00_functions.R`](scripts/R/00_functions.R) — change that line to point at
+wherever the exports were downloaded.
 
-✔ Repository structure
+---
 
-✔ Complete list of scripts (numbered where execution order matters)
+## Reading the results honestly
 
-✔ Description of all key input and output datasets
+Three things in [`docs/unsupervised-change-findings.md`](docs/unsupervised-change-findings.md)
+that matter more than the headline:
 
-✔ Instructions for reproducing the analysis
+1. **Three figures that should never be quoted as change** — 44.6% "changed",
+   1,600 km² and 877 km² — and why each is an artefact of cluster membership
+   rather than a measured area (§1).
+2. **Candidate pixels were selected on a 2019→2024 difference**, so any
+   in-sample statistic computed on them is contaminated by that choice. The
+   series initially showed them trending 22 standard errors faster than
+   background; a placebo applying the same rule to other year pairs reproduced
+   it (§7.4, §9 caveat 5).
+3. **Six data-quality failures found and fixed**, each invisible until
+   specifically tested for, including a scale factor applied twice that exported
+   six reflectance bands as zero while leaving the indices perfect (§10).
 
-✔ Licence
+---
 
-✔ Contact name and email
+## Licence and citation
+
+Code is licensed under the [GNU GPL v3](LICENSE).
+
+Not yet archived or associated with a publication. Two template items remain
+outstanding and need the author's input: an **ORCID** for attribution, and a
+**Zenodo DOI** for a permanent archived release.
